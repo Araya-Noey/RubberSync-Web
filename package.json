@@ -1,0 +1,13 @@
+{
+  "name": "rubbersync-web-real",
+  "version": "1.0.0",
+  "private": true,
+  "description": "RubberSync responsive web app with built-in Node.js backend",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

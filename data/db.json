@@ -1,0 +1,78 @@
+{
+  "version": 1,
+  "users": [
+    {
+      "id": "usr_demo_user",
+      "fullName": "สมจิตร เดือนอิน",
+      "phone": "0800000001",
+      "role": "user",
+      "passwordSalt": "240008dbbb07c81a1cda0a4586e92ef9",
+      "passwordHash": "f78e80c1728338dfe10e29f1f2aba913434c23c6a9c7f3c927c87b44d48189d42f69d37ab801e54427b508bbe7dab3e3413b6764c74eb046333dbc2f60173a88",
+      "createdAt": "2026-09-06T03:45:46.592Z"
+    },
+    {
+      "id": "usr_demo_admin",
+      "fullName": "ธนกฤต ศุภทรัพย์",
+      "phone": "0800000000",
+      "role": "admin",
+      "passwordSalt": "7110bdeff75d40b0770fd919ad423204",
+      "passwordHash": "9fb94f91db35bc2afbba7a0734274d3175a7ea2d28230a81e1cf001dd81b79c52fa747b05e2be7905e3cbd42e354861f1692bd14b58807ac8aa39c945c692c2c",
+      "createdAt": "2026-09-06T03:45:46.593Z"
+    },
+    {
+      "id": "usr_mtsbn0ko_3b9ffa4b",
+      "fullName": "อารญา เดือนอิน",
+      "phone": "0955485573",
+      "role": "user",
+      "passwordSalt": "1b9790f89b310d7100335322c260b6b2",
+      "passwordHash": "eca23a30aefe9e24a4a115029b8f35069f31399469d59524c4ba3adff17355599adc5ab29d6ffd101df28951439ae5155cf73a670e15bd0f73d57620c0fa5117",
+      "createdAt": "2026-09-08T07:01:40.392Z"
+    }
+  ],
+  "requests": [
+    {
+      "id": "req_demo_1",
+      "ref": "TXN-5678-RUBB",
+      "userId": "usr_demo_user",
+      "category": "ค่าน้ำมัน",
+      "amount": 2000,
+      "date": "2026-08-21",
+      "note": "โซน A น้ำมันไม่พอ",
+      "status": "rejected",
+      "createdAt": "2026-09-06T03:45:46.593Z",
+      "updatedAt": "2026-09-08T06:58:46.613Z",
+      "reviewedBy": "usr_demo_admin",
+      "reviewedAt": "2026-09-08T06:58:46.613Z"
+    },
+    {
+      "id": "req_mtsbblkn_2b08af5f",
+      "ref": "TXN-7737-RUBB",
+      "userId": "usr_demo_user",
+      "category": "ค่าน้ำมัน",
+      "amount": 2000,
+      "date": "2026-09-08",
+      "note": "yrtytt",
+      "status": "approved",
+      "createdAt": "2026-09-08T06:52:47.737Z",
+      "updatedAt": "2026-09-08T06:58:32.140Z",
+      "reviewedBy": "usr_demo_admin",
+      "reviewedAt": "2026-09-08T06:58:32.140Z"
+    }
+  ],
+  "announcements": [
+    {
+      "id": "ann_demo_1",
+      "title": "เตรียมตัวเก็บยาง",
+      "body": "จะเริ่มประมูลยางในวันที่ 25 สิงหาคม 2569 จะแจ้งราคาประมูลและวันเก็บให้ทราบอีกครั้ง",
+      "audience": "all",
+      "createdBy": "usr_demo_admin",
+      "createdAt": "2026-09-06T03:45:46.593Z"
+    }
+  ],
+  "payments": [],
+  "settings": {
+    "discordInviteUrl": "",
+    "appName": "RubberSync",
+    "version": "1.0.0"
+  }
+}
