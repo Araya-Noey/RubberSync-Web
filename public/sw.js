@@ -1,4 +1,4 @@
-const CACHE='rubbersync-v1';
+const CACHE='rubbersync-v3';
 const STATIC=['/','/index.html','/styles.css','/app.js','/manifest.webmanifest','/assets/icon-192.png','/assets/icon-512.png','/assets/rubbersync-logo-user.png'];
 self.addEventListener('install',e=>e.waitUntil(caches.open(CACHE).then(c=>c.addAll(STATIC)).then(()=>self.skipWaiting())));
 self.addEventListener('activate',e=>e.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(k=>k!==CACHE).map(k=>caches.delete(k)))).then(()=>self.clients.claim())));

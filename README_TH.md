@@ -7,8 +7,8 @@
 - ไม่ต้อง `npm install` เพราะ Backend ใช้ Node.js built-in modules เท่านั้น
 - ข้อมูลผู้ใช้ / คำขอ / ประกาศ / การจ่ายเงิน บันทึกลง `data/db.json`
 - มือถือหลายเครื่องที่เข้า URL ของคอม/เซิร์ฟเวอร์เครื่องเดียวกัน จะเห็นข้อมูลชุดเดียวกัน
-- รองรับแนบสลิปจริง (PNG/JPG/WebP สูงสุด 5 MB)
-- รองรับ Discord Webhook ถ้าตั้ง `DISCORD_WEBHOOK_URL`
+- รองรับแนบใบเสร็จในคำขอเบิก และสลิปยืนยันการจ่ายเงินจริง (PNG/JPG/WebP สูงสุด 5 MB)
+- มีห้องสนทนากลางภายในระบบ และรายชื่อพร้อมข้อมูลติดต่อของผู้ใช้
 - รองรับ PWA สามารถ Add to Home Screen ได้
 
 ## วิธีเปิดบน Windows
@@ -30,19 +30,8 @@ Admin
 - เบอร์: `0800000000`
 - รหัสผ่าน: `12345678`
 
-## Discord Webhook
-เปิด CMD/PowerShell ก่อนรันเซิร์ฟเวอร์ แล้วตั้ง environment variable:
-
-PowerShell:
-`$env:DISCORD_WEBHOOK_URL="https://discord.com/api/webhooks/..."`
-`node server.js`
-
-CMD:
-`set DISCORD_WEBHOOK_URL=https://discord.com/api/webhooks/...`
-`node server.js`
-
 ## ข้อมูลที่บันทึก
 - `data/db.json` ฐานข้อมูลแบบ JSON สำหรับระบบนี้
-- `public/uploads/` รูปสลิปที่อัปโหลด
+- `public/uploads/` รูปใบเสร็จและสลิปที่อัปโหลด
 
 สำหรับขึ้นออนไลน์จริง แนะนำ deploy บน VPS/Render/Railway พร้อม HTTPS และย้ายฐานข้อมูลไป PostgreSQL/MySQL เมื่อมีผู้ใช้จำนวนมาก

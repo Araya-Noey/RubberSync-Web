@@ -57,6 +57,21 @@
       "updatedAt": "2026-09-08T06:58:32.140Z",
       "reviewedBy": "usr_demo_admin",
       "reviewedAt": "2026-09-08T06:58:32.140Z"
+    },
+    {
+      "id": "req_mty8zcq3_82b01911",
+      "ref": "TXN-4221-RUBB",
+      "userId": "usr_demo_user",
+      "category": "ค่าน้ำกรด",
+      "amount": 2000,
+      "date": "2026-09-12",
+      "note": "-",
+      "receiptUrl": "/uploads/req_mty8zcq3_82b01911-receipt-1789209234219.jpg",
+      "status": "rejected",
+      "createdAt": "2026-09-12T10:33:54.221Z",
+      "updatedAt": "2026-09-12T10:36:02.091Z",
+      "reviewedBy": "usr_demo_admin",
+      "reviewedAt": "2026-09-12T10:36:02.091Z"
     }
   ],
   "announcements": [
@@ -70,8 +85,21 @@
     }
   ],
   "payments": [],
+  "messages": [
+    {
+      "id": "msg_welcome",
+      "userId": "usr_demo_admin",
+      "text": "ยินดีต้อนรับเข้าสู่ห้องสนทนาสวนยางครับ",
+      "createdAt": "2026-09-06T03:45:46.593Z"
+    },
+    {
+      "id": "msg_mtxzlxih_5dcab3c8",
+      "userId": "usr_demo_user",
+      "text": "สวัสดี",
+      "createdAt": "2026-09-12T06:11:31.434Z"
+    }
+  ],
   "settings": {
-    "discordInviteUrl": "",
     "appName": "RubberSync",
     "version": "1.0.0"
   }
