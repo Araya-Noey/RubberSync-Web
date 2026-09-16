@@ -5,14 +5,16 @@ const crypto = require('crypto');
 const os = require('os');
 
 const ROOT = __dirname;
-const PUBLIC = path.join(ROOT, 'public');
-const DATA_DIR = path.join(ROOT, 'data');
-const DB_FILE = path.join(DATA_DIR, 'db.json');
+const UPLOADS_DIR = path.join(ROOT, 'uploads');
+const DB_FILE = path.join(ROOT, 'data', 'db.json');
+const FRONTEND_PUBLIC = path.resolve(ROOT, '../Frontend/public');
 const PORT = Number(process.env.PORT || 8080);
 const AUTH_SECRET = process.env.AUTH_SECRET || 'rubbersync-dev-secret-change-me';
+const FRONTEND_ORIGIN = process.env.FRONTEND_ORIGIN || 'http://localhost:3000';
+const DISCORD_WEBHOOK_URL = process.env.DISCORD_WEBHOOK_URL || '';
 
-fs.mkdirSync(DATA_DIR, { recursive: true });
-fs.mkdirSync(path.join(PUBLIC, 'uploads'), { recursive: true });
+fs.mkdirSync(path.dirname(DB_FILE), { recursive: true });
+fs.mkdirSync(UPLOADS_DIR, { recursive: true });
 
 function now() { return new Date().toISOString(); }
 function id(prefix='id') { return `${prefix}_${Date.now().toString(36)}_${crypto.randomBytes(4).toString('hex')}`; }
@@ -80,7 +82,13 @@ let db = loadDb();
 function saveDb() { fs.writeFileSync(DB_FILE, JSON.stringify(db, null, 2)); }
 
 function json(res, code, obj) {
-  res.writeHead(code, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
+  res.writeHead(code, {
+    'Content-Type': 'application/json; charset=utf-8',
+    'Cache-Control': 'no-store',
+    'Access-Control-Allow-Origin': FRONTEND_ORIGIN,
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+    'Access-Control-Allow-Methods': 'GET, POST, PATCH, OPTIONS'
+  });
   res.end(JSON.stringify(obj));
 }
 function getBody(req, limit = 8 * 1024 * 1024) {
@@ -120,6 +128,15 @@ function requireAuth(req, res, role) {
   if (role && user.role !== role) { json(res, 403, { error: 'forbidden' }); return null; }
   return user;
 }
+async function sendDiscordMessage(content) {
+  if (!DISCORD_WEBHOOK_URL) return { ok: false, configured: false };
+  try {
+    const resp = await fetch(DISCORD_WEBHOOK_URL, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ content })
+    });
+    return { ok: resp.ok, configured: true, status: resp.status };
+  } catch (e) { return { ok: false, configured: true, error: e.message }; }
+}
 async function handleApi(req, res, url) {
   const method = req.method;
   const p = url.pathname;
@@ -146,6 +163,21 @@ async function handleApi(req, res, url) {
     const user = { id: id('usr'), fullName, phone, lineId: '', contactNote: '', bankName: '', bankAccountName: '', bankAccountNumber: '', role: 'user', passwordSalt: ph.salt, passwordHash: ph.hash, createdAt: now() };
     db.users.push(user); saveDb();
     return json(res, 201, { token: signToken(user), user: requestUser(user) });
+  }
+
+  if (p === '/api/auth/reset-password' && method === 'POST') {
+    const body = await getBody(req);
+    const phone = String(body.phone || '').trim();
+    const password = String(body.password || '');
+    if (!/^0\d{9}$/.test(phone) || password.length < 8) return json(res, 400, { error: 'invalid_input' });
+    const user = db.users.find(u => u.phone === phone);
+    if (!user) return json(res, 404, { error: 'phone_not_found' });
+    const ph = hashPassword(password);
+    user.passwordSalt = ph.salt;
+    user.passwordHash = ph.hash;
+    user.passwordChangedAt = now();
+    saveDb();
+    return json(res, 200, { ok: true });
   }
 
   if (p === '/api/me' && method === 'GET') {
@@ -204,7 +236,7 @@ async function handleApi(req, res, url) {
     const requestId = id('req');
     const ext = image[1] === 'image/jpeg' ? 'jpg' : image[1].split('/')[1];
     const filename = `${requestId}-receipt-${Date.now()}.${ext}`;
-    fs.writeFileSync(path.join(PUBLIC, 'uploads', filename), receipt);
+    fs.writeFileSync(path.join(UPLOADS_DIR, filename), receipt);
     const r = { id: requestId, ref: `TXN-${String(Date.now()).slice(-4)}-RUBB`, userId: user.id, category, amount: Math.round(amount*100)/100, date, note, receiptUrl: `/uploads/${filename}`, receiptVerification: { category, fileType: image[1], checkedAt: now() }, status: 'pending', createdAt: now(), updatedAt: now() };
     db.requests.push(r); saveDb();
     return json(res, 201, { request: requestView(r) });
@@ -246,7 +278,9 @@ async function handleApi(req, res, url) {
     if (title.length < 2 || text.length < 2 || !['all','workers','admin'].includes(audience)) return json(res, 400, { error: 'invalid_input' });
     const a = { id: id('ann'), title, body: text, audience, createdBy: admin.id, createdAt: now() };
     db.announcements.push(a); saveDb();
-    return json(res, 201, { announcement: a });
+    let discord = { ok:false, configured:Boolean(DISCORD_WEBHOOK_URL) };
+    if (body.sendDiscord) discord = await sendDiscordMessage(`📢 **${title}**\n${text}`);
+    return json(res, 201, { announcement: a, discord });
   }
 
   if (p === '/api/messages' && method === 'GET') {
@@ -305,7 +339,7 @@ async function handleApi(req, res, url) {
     if (buf.length > 5 * 1024 * 1024) return json(res, 413, { error: 'image_too_large' });
     const ext = m[1] === 'image/jpeg' ? 'jpg' : m[1].split('/')[1];
     const filename = `${r.id}-${Date.now()}.${ext}`;
-    fs.writeFileSync(path.join(PUBLIC, 'uploads', filename), buf);
+    fs.writeFileSync(path.join(UPLOADS_DIR, filename), buf);
     let pay = db.payments.find(x => x.requestId === r.id);
     if (!pay) { pay = { id: id('pay'), requestId: r.id, adminId: admin.id, createdAt: now() }; db.payments.push(pay); }
     pay.slipUrl = `/uploads/${filename}`; pay.note = String(body.note || '').slice(0,500); pay.status = 'paid'; pay.paidAt = now();
@@ -318,42 +352,71 @@ async function handleApi(req, res, url) {
 
   if (p === '/api/settings' && method === 'GET') {
     const user = requireAuth(req, res); if (!user) return;
-    return json(res, 200, { settings: { appName: db.settings.appName, version: db.settings.version } });
+    return json(res, 200, { settings: { ...db.settings, discordWebhookConfigured: Boolean(DISCORD_WEBHOOK_URL) } });
   }
 
   if (p === '/api/settings' && method === 'PATCH') {
     const admin = requireAuth(req, res, 'admin'); if (!admin) return;
-    return json(res, 200, { settings: { appName: db.settings.appName, version: db.settings.version } });
+    const body = await getBody(req);
+    if (typeof body.discordInviteUrl === 'string') db.settings.discordInviteUrl = body.discordInviteUrl.trim().slice(0,500);
+    saveDb();
+    return json(res, 200, { settings: { ...db.settings, discordWebhookConfigured: Boolean(DISCORD_WEBHOOK_URL) } });
+  }
+
+  if (p === '/api/discord/test' && method === 'POST') {
+    const admin = requireAuth(req, res, 'admin'); if (!admin) return;
+    const result = await sendDiscordMessage('✅ RubberSync เชื่อมต่อ Discord Webhook สำเร็จ');
+    return json(res, result.ok ? 200 : 400, result);
   }
 
   return json(res, 404, { error: 'api_not_found' });
 }
 
 const MIME = { '.html':'text/html; charset=utf-8', '.js':'text/javascript; charset=utf-8', '.css':'text/css; charset=utf-8', '.json':'application/json; charset=utf-8', '.png':'image/png', '.jpg':'image/jpeg', '.jpeg':'image/jpeg', '.webp':'image/webp', '.svg':'image/svg+xml', '.ico':'image/x-icon', '.webmanifest':'application/manifest+json' };
-function serveStatic(req, res, url) {
+function serveUpload(req, res, url) {
+  const filename = path.basename(decodeURIComponent(url.pathname));
+  const file = path.join(UPLOADS_DIR, filename);
+  fs.stat(file, (err, stat) => {
+    if (err || !stat.isFile()) {
+      res.writeHead(404, { 'Access-Control-Allow-Origin': FRONTEND_ORIGIN });
+      return res.end('Not found');
+    }
+    const ext = path.extname(file).toLowerCase();
+    const headers = { 'Content-Type': MIME[ext] || 'application/octet-stream', 'Cache-Control': 'public, max-age=86400', 'Access-Control-Allow-Origin': FRONTEND_ORIGIN };
+    fs.readFile(file, (e, data) => { if (e) { res.writeHead(500); return res.end('Read error'); } res.writeHead(200, headers); res.end(data); });
+  });
+}
+
+function serveFrontend(req, res, url) {
   let rel = decodeURIComponent(url.pathname);
   if (rel === '/') rel = '/index.html';
   const normalized = path.normalize(rel).replace(/^([.][.][/\\])+/, '');
-  const file = path.join(PUBLIC, normalized);
-  if (!file.startsWith(PUBLIC)) { res.writeHead(403); return res.end('Forbidden'); }
+  const file = path.join(FRONTEND_PUBLIC, normalized);
+  if (!file.startsWith(FRONTEND_PUBLIC)) { res.writeHead(403); return res.end('Forbidden'); }
   fs.stat(file, (err, stat) => {
     if (err || !stat.isFile()) {
-      const index = path.join(PUBLIC, 'index.html');
-      fs.readFile(index, (e, data) => { if (e) { res.writeHead(404); return res.end('Not found'); } res.writeHead(200, {'Content-Type':'text/html; charset=utf-8'}); res.end(data); });
-      return;
+      const index = path.join(FRONTEND_PUBLIC, 'index.html');
+      return fs.readFile(index, (e, data) => { if (e) { res.writeHead(404); return res.end('Not found'); } res.writeHead(200, { 'Content-Type':'text/html; charset=utf-8' }); res.end(data); });
     }
     const ext = path.extname(file).toLowerCase();
-    const headers = { 'Content-Type': MIME[ext] || 'application/octet-stream' };
-    if (rel.startsWith('/uploads/')) headers['Cache-Control'] = 'public, max-age=86400';
-    fs.readFile(file, (e, data) => { if (e) { res.writeHead(500); return res.end('Read error'); } res.writeHead(200, headers); res.end(data); });
+    fs.readFile(file, (e, data) => { if (e) { res.writeHead(500); return res.end('Read error'); } res.writeHead(200, { 'Content-Type': MIME[ext] || 'application/octet-stream' }); res.end(data); });
   });
 }
 
 const server = http.createServer(async (req, res) => {
   try {
     const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
+    if (req.method === 'OPTIONS') {
+      res.writeHead(204, {
+        'Access-Control-Allow-Origin': FRONTEND_ORIGIN,
+        'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+        'Access-Control-Allow-Methods': 'GET, POST, PATCH, OPTIONS'
+      });
+      return res.end();
+    }
     if (url.pathname.startsWith('/api/')) return await handleApi(req, res, url);
-    return serveStatic(req, res, url);
+    if (url.pathname.startsWith('/uploads/')) return serveUpload(req, res, url);
+    return serveFrontend(req, res, url);
   } catch (e) {
     console.error(e);
     if (!res.headersSent) json(res, e.message === 'payload_too_large' ? 413 : 500, { error: e.message || 'server_error' });
@@ -361,12 +424,13 @@ const server = http.createServer(async (req, res) => {
 });
 
 server.listen(PORT, '0.0.0.0', () => {
-  const nets = os.networkInterfaces();
+  let nets = {};
+  try { nets = os.networkInterfaces(); } catch { nets = {}; }
   const ips = [];
   for (const values of Object.values(nets)) for (const n of values || []) if (n.family === 'IPv4' && !n.internal) ips.push(n.address);
   console.log('\n=============================================');
-  console.log(' RubberSync Web พร้อมใช้งาน');
-  console.log(` คอม:    http://localhost:${PORT}`);
-  ips.forEach(ip => console.log(` มือถือ: http://${ip}:${PORT}`));
+  console.log(' RubberSync Backend พร้อมใช้งาน');
+  console.log(` API:     http://localhost:${PORT}/api/health`);
+  ips.forEach(ip => console.log(` Network: http://${ip}:${PORT}/api/health`));
   console.log('=============================================\n');
 });

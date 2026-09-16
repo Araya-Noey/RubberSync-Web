@@ -1,11 +1,11 @@
 {
-  "name": "rubbersync-web-real",
+  "name": "rubbersync-workspace",
   "version": "1.0.0",
   "private": true,
-  "description": "RubberSync responsive web app with built-in Node.js backend",
+  "description": "RubberSync frontend and backend workspace",
   "scripts": {
-    "start": "node server.js",
-    "dev": "node server.js"
+    "start": "node Backend/server.js",
+    "dev": "node Backend/server.js"
   },
   "engines": {
     "node": ">=18"

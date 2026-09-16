@@ -11,5 +11,5 @@ if errorlevel 1 (
 echo.
 echo กำลังเปิด RubberSync Web...
 echo.
-node server.js
+node Backend\server.js
 pause
