@@ -13,6 +13,11 @@ const AUTH_SECRET = process.env.AUTH_SECRET || 'rubbersync-dev-secret-change-me'
 const FRONTEND_ORIGIN = process.env.FRONTEND_ORIGIN || 'http://localhost:3000';
 const DISCORD_WEBHOOK_URL = process.env.DISCORD_WEBHOOK_URL || '';
 
+// =========================================
+// ตัวแปรสำหรับเก็บกุญแจ LINE API
+// =========================================
+const LINE_ACCESS_TOKEN = process.env.LINE_ACCESS_TOKEN || 'iWtWRALMPqgJXZVRq5hJkkjadY+ourWUwg9dDIt2u7BkblTAAYctSeZ+ngUTp6zQLiBMNqxHy2KieN+/UdbkZ3uI0xYW+3v6pM5UukRMivE2mUJl2HGpMKMkw8agnC6tJ9AO9aB/ZtgoCsLWUPogIQdB04t89/1O/w1cDnyilFU=';
+
 fs.mkdirSync(path.dirname(DB_FILE), { recursive: true });
 fs.mkdirSync(UPLOADS_DIR, { recursive: true });
 
@@ -128,20 +133,65 @@ function requireAuth(req, res, role) {
   if (role && user.role !== role) { json(res, 403, { error: 'forbidden' }); return null; }
   return user;
 }
-async function sendDiscordMessage(content) {
-  if (!DISCORD_WEBHOOK_URL) return { ok: false, configured: false };
-  try {
-    const resp = await fetch(DISCORD_WEBHOOK_URL, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ content })
+
+// =========================================
+// ฟังก์ชันส่งข้อความแจ้งเตือนผ่าน LINE
+// =========================================
+async function sendLineMessage(userId, textMessage) {
+  if (!LINE_ACCESS_TOKEN) return { ok: false, error: 'No Token Configured' };  try {
+    const resp = await fetch('https://api.line.me/v2/bot/message/push', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${LINE_ACCESS_TOKEN}`
+      },
+      body: JSON.stringify({
+        to: userId,
+        messages: [{ type: 'text', text: textMessage }]
+      })
     });
-    return { ok: resp.ok, configured: true, status: resp.status };
-  } catch (e) { return { ok: false, configured: true, error: e.message }; }
+    return { ok: resp.ok, status: resp.status };
+  } catch (e) { 
+    return { ok: false, error: e.message }; 
+  }
 }
+
 async function handleApi(req, res, url) {
   const method = req.method;
   const p = url.pathname;
 
   if (p === '/api/health' && method === 'GET') return json(res, 200, { ok: true, app: 'RubberSync', time: now() });
+
+  // =========================================
+  // ระบบ Webhook: ดึง LINE ID อัตโนมัติเมื่อผู้ใช้ทักแชท
+  // =========================================
+  if (p === '/api/webhook/line' && method === 'POST') {
+    const body = await getBody(req);
+    if (body.events && body.events.length > 0) {
+      for (const event of body.events) {
+        if (event.type === 'message' && event.message.type === 'text') {
+          const userId = event.source.userId; 
+          const text = event.message.text.trim();
+
+          if (text.startsWith('ผูกบัญชี')) {
+            const phone = text.replace('ผูกบัญชี', '').trim();
+            const user = db.users.find(u => u.phone === phone);
+            
+            if (user) {
+              user.lineId = userId; 
+              saveDb();
+              await sendLineMessage(userId, `✅ ผูกบัญชีสำเร็จ!\nระบบได้เชื่อมต่อ LINE นี้เข้ากับเบอร์ ${phone} ของคุณ ${user.fullName} เรียบร้อยแล้ว การแจ้งเตือนเบิกเงินจะส่งมาที่นี่ครับ`);
+            } else {
+              await sendLineMessage(userId, `❌ ไม่พบเบอร์โทรศัพท์ ${phone} ในระบบครับ\nกรุณาตรวจสอบเบอร์โทรอีกครั้ง หรือติดต่อแอดมิน`);
+            }
+          } else {
+             await sendLineMessage(userId, `พิมพ์คำว่า "ผูกบัญชี ตามด้วยเบอร์โทรของคุณ" เพื่อรับการแจ้งเตือน\nตัวอย่าง: ผูกบัญชี 0800000001`);
+          }
+        }
+      }
+    }
+    return json(res, 200, { ok: true });
+  }
 
   if (p === '/api/auth/login' && method === 'POST') {
     const body = await getBody(req);
@@ -239,9 +289,19 @@ async function handleApi(req, res, url) {
     fs.writeFileSync(path.join(UPLOADS_DIR, filename), receipt);
     const r = { id: requestId, ref: `TXN-${String(Date.now()).slice(-4)}-RUBB`, userId: user.id, category, amount: Math.round(amount*100)/100, date, note, receiptUrl: `/uploads/${filename}`, receiptVerification: { category, fileType: image[1], checkedAt: now() }, status: 'pending', createdAt: now(), updatedAt: now() };
     db.requests.push(r); saveDb();
+
+    // 👉 (เพิ่มพิเศษ) แจ้งเตือนแอดมินเวลามีคนส่งคำขอเบิกเงินใหม่
+    const adminUser = db.users.find(u => u.role === 'admin' && u.lineId !== '');
+    if (adminUser) {
+       sendLineMessage(adminUser.lineId, `📢 มีคำขอเบิกเงินใหม่\n${user.fullName} ขอเบิกค่า "${category}" จำนวน ${amount} บาท`);
+    }
+
     return json(res, 201, { request: requestView(r) });
   }
 
+  // =========================================
+  // ระบบอนุมัติเบิกเงิน + ยิง LINE หาคนงานอัตโนมัติ
+  // =========================================
   const requestStatusMatch = p.match(/^\/api\/requests\/([^/]+)\/status$/);
   if (requestStatusMatch && method === 'PATCH') {
     const admin = requireAuth(req, res, 'admin'); if (!admin) return;
@@ -252,6 +312,15 @@ async function handleApi(req, res, url) {
     r.status = body.status; r.reviewedBy = admin.id; r.reviewedAt = now(); r.updatedAt = now();
     if (body.reason) r.reviewReason = String(body.reason).slice(0,500);
     saveDb();
+
+    // ดึง LINE ID ของเจ้าของบิลมาแจ้งเตือน
+    const requestOwner = db.users.find(u => u.id === r.userId);
+    if (requestOwner && requestOwner.lineId) {
+       const statusText = body.status === 'approved' ? '✅ อนุมัติ' : '❌ ไม่อนุมัติ';
+       const msg = `แจ้งเตือนจาก RubberSync\nคำขอเบิกเงินค่า "${r.category}" จำนวน ${r.amount} บาทของคุณ ได้รับการ ${statusText} แล้วครับ!`;
+       sendLineMessage(requestOwner.lineId, msg);
+    }
+
     return json(res, 200, { request: requestView(r) });
   }
 
@@ -278,41 +347,16 @@ async function handleApi(req, res, url) {
     if (title.length < 2 || text.length < 2 || !['all','workers','admin'].includes(audience)) return json(res, 400, { error: 'invalid_input' });
     const a = { id: id('ann'), title, body: text, audience, createdBy: admin.id, createdAt: now() };
     db.announcements.push(a); saveDb();
-    let discord = { ok:false, configured:Boolean(DISCORD_WEBHOOK_URL) };
-    if (body.sendDiscord) discord = await sendDiscordMessage(`📢 **${title}**\n${text}`);
-    return json(res, 201, { announcement: a, discord });
-  }
+    
+    // (เพิ่มพิเศษ) บรอดแคสต์ประกาศผ่าน LINE หาคนงานทุกคน
+    if (body.sendLine) {
+       const usersToNotify = db.users.filter(u => u.role === 'user' && u.lineId !== '');
+       for (const u of usersToNotify) {
+          sendLineMessage(u.lineId, `📢 ประกาศ: ${title}\n${text}`);
+       }
+    }
 
-  if (p === '/api/messages' && method === 'GET') {
-    const user = requireAuth(req, res); if (!user) return;
-    const allMessages = db.messages || [];
-    const pinned = allMessages.filter(message => Date.parse(message.pinnedUntil || '') > Date.now()).sort((a,b) => b.pinnedAt.localeCompare(a.pinnedAt))[0] || null;
-    const messageView = message => ({ ...message, user: safeUser(db.users.find(u => u.id === message.userId) || { id:'', fullName:'ไม่ทราบชื่อ', phone:'', role:'user', createdAt:'' }) });
-    return json(res, 200, { messages: allMessages.slice(-100).map(messageView), pinnedMessage: pinned ? messageView(pinned) : null });
-  }
-
-  if (p === '/api/messages' && method === 'POST') {
-    const user = requireAuth(req, res); if (!user) return;
-    const body = await getBody(req);
-    const text = String(body.text || '').trim();
-    if (!text || text.length > 1000) return json(res, 400, { error: 'invalid_message' });
-    if (!Array.isArray(db.messages)) db.messages = [];
-    const message = { id: id('msg'), userId: user.id, text, createdAt: now() };
-    db.messages.push(message); saveDb();
-    return json(res, 201, { message: { ...message, user: safeUser(user) } });
-  }
-
-  const pinMatch = p.match(/^\/api\/messages\/([^/]+)\/pin$/);
-  if (pinMatch && method === 'POST') {
-    const admin = requireAuth(req, res, 'admin'); if (!admin) return;
-    const message = (db.messages || []).find(item => item.id === pinMatch[1]);
-    if (!message) return json(res, 404, { error: 'not_found' });
-    for (const item of db.messages) { delete item.pinnedUntil; delete item.pinnedAt; delete item.pinnedBy; }
-    message.pinnedAt = now();
-    message.pinnedUntil = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
-    message.pinnedBy = admin.id;
-    saveDb();
-    return json(res, 200, { message, pinnedUntil: message.pinnedUntil });
+    return json(res, 201, { announcement: a });
   }
 
   if (p === '/api/payments' && method === 'GET') {
@@ -347,25 +391,19 @@ async function handleApi(req, res, url) {
     pay.recipientBank = recipient ? { bankName: recipient.bankName || '', accountName: recipient.bankAccountName || recipient.fullName, accountNumber: recipient.bankAccountNumber || '' } : null;
     r.status = 'paid'; r.updatedAt = now();
     saveDb();
+
+    // แจ้งเตือนโอนเงินสำเร็จ
+    if (recipient && recipient.lineId) {
+       sendLineMessage(recipient.lineId, `💸 โอนเงินสำเร็จ!\nแอดมินได้ทำการแนบสลิปการโอนเงินจำนวน ${r.amount} บาท ให้คุณเรียบร้อยแล้ว กรุณาตรวจสอบในระบบครับ`);
+    }
+
     return json(res, 200, { payment: pay, request: requestView(r) });
   }
 
-  if (p === '/api/settings' && method === 'GET') {
-    const user = requireAuth(req, res); if (!user) return;
-    return json(res, 200, { settings: { ...db.settings, discordWebhookConfigured: Boolean(DISCORD_WEBHOOK_URL) } });
-  }
-
-  if (p === '/api/settings' && method === 'PATCH') {
-    const admin = requireAuth(req, res, 'admin'); if (!admin) return;
-    const body = await getBody(req);
-    if (typeof body.discordInviteUrl === 'string') db.settings.discordInviteUrl = body.discordInviteUrl.trim().slice(0,500);
-    saveDb();
-    return json(res, 200, { settings: { ...db.settings, discordWebhookConfigured: Boolean(DISCORD_WEBHOOK_URL) } });
-  }
-
-  if (p === '/api/discord/test' && method === 'POST') {
-    const admin = requireAuth(req, res, 'admin'); if (!admin) return;
-    const result = await sendDiscordMessage('✅ RubberSync เชื่อมต่อ Discord Webhook สำเร็จ');
+  // API สำหรับทดสอบ LINE โดยตรง
+  if (p === '/api/line/test' && method === 'GET') {
+    const myLineUserId = 'U8a4d63b739ff037d3ea806443e4be82c'; 
+    const result = await sendLineMessage(myLineUserId, '✅ ทดสอบระบบ: การเชื่อมต่อ LINE สำเร็จแล้ว!');
     return json(res, result.ok ? 200 : 400, result);
   }
 
