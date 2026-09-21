@@ -5,6 +5,7 @@ const state = {
   token: localStorage.getItem('rubbersync_token') || '',
   user: null,
   view: 'home',
+  viewHistory: [],
   audience: 'all',
   announcementDraft: { title:'', body:'' },
   requestStep: 1,
@@ -77,8 +78,12 @@ function renderRegister(){
 
 function shell(content,active='home'){
   const u=state.user;
+  const backButton = state.view !== 'home'
+    ? '<button class="text-link" data-action="go-back">← ย้อนกลับ</button>'
+    : '';
+
   return `<div class="page app-shell">
-    <header class="topbar"><div class="topbar-inner"><div class="profile-mini"><div class="avatar">${h((u?.fullName||'R').trim()[0]||'R')}</div><div><div class="topbar-title">${h(u?.fullName||'RubberSync')}</div><div class="meta">${u?.role==='admin'?'เจ้าของสวน / ผู้ดูแล':'คนงานสวนยาง'}</div></div></div><button class="text-link" data-action="refresh">รีเฟรช</button></div></header>
+    <header class="topbar"><div class="topbar-inner"><div class="profile-mini"><div class="avatar">${h((u?.fullName||'R').trim()[0]||'R')}</div><div><div class="topbar-title">${h(u?.fullName||'RubberSync')}</div><div class="meta">${u?.role==='admin'?'เจ้าของสวน / ผู้ดูแล':'คนงานสวนยาง'}</div></div></div>${backButton}</div></header>
     <main class="content">${content}</main>
     <nav class="bottomnav"><div class="bottomnav-inner">
       <button class="nav-btn ${active==='home'?'active':''}" data-view="home"><span class="nav-icon">⌂</span><span>หน้าหลัก</span></button>
@@ -129,7 +134,7 @@ function renderAnnouncement(){
   $('#announce-form').addEventListener('submit',async e=>{e.preventDefault();const f=new FormData(e.currentTarget);try{await api('/api/announcements',{method:'POST',body:JSON.stringify({title:f.get('title'),body:f.get('body'),audience:state.audience})});state.announcementDraft={title:'',body:''};await loadCore();toast('สร้างประกาศสำเร็จ');state.view='community';renderCommunity();}catch(err){toast(err.message,'error')}});
 }
 
-function renderCommunity(){ const anns=state.announcements, messages=state.messages, pinned=state.pinnedMessage, admin=state.user.role==='admin'; app.innerHTML=shell(`${hero('ห้องสนทนา RubberSync','พูดคุยกับทีมงานในสวนได้โดยตรง')}${pinned?`<section class="pinned-message"><div class="pinned-label">📌 ข้อความปักหมุด · แสดง 1 วัน</div><strong>${h(pinned.user?.fullName||'ไม่ทราบชื่อ')}</strong><p>${h(pinned.text)}</p><div class="meta">หมดอายุ ${h(dt(pinned.pinnedUntil))}</div></section>`:''}<section class="card chat-card"><div class="chat-head"><div><h3>ห้องสนทนาสวนยาง</h3><div class="muted">ข้อความล่าสุดของทุกคนในระบบ</div></div><button class="text-link" data-action="refresh">รีเฟรช</button></div><div class="chat-messages">${messages.length?messages.map(m=>`<article class="chat-message ${m.userId===state.user.id?'mine':''}"><div class="chat-author">${h(m.user?.fullName||'ไม่ทราบชื่อ')} <span>${h(dt(m.createdAt))}</span></div><div>${h(m.text)}</div>${admin?`<div class="chat-actions"><button class="text-link" data-pin-message="${m.id}">📌 ปักหมุด 1 วัน</button><button class="text-link" data-create-announcement="${m.id}">สร้างประกาศ</button></div>`:''}</article>`).join(''):`<div class="muted">เริ่มต้นบทสนทนาได้เลย</div>`}</div><form id="chat-form" class="chat-form"><input class="input" name="text" maxlength="1000" placeholder="พิมพ์ข้อความถึงทีมงาน..." required><button class="btn btn-primary" type="submit">ส่ง</button></form></section><div class="section-title" style="margin-top:28px"><h3>ประกาศล่าสุด</h3>${admin?`<button class="btn btn-primary" data-view="announcement">+ สร้างประกาศ</button>`:''}</div><div class="list">${anns.length?anns.map(a=>`<article class="card announcement-item"><span class="status approved">${a.audience==='all'?'ทุกคน':a.audience==='workers'?'คนงาน':'ผู้ดูแล'}</span><h4>${h(a.title)}</h4><p>${h(a.body)}</p><div class="announcement-author">โดย ${h(a.author?.fullName||'ระบบ')} · ${h(dt(a.createdAt))}</div></article>`).join(''):`<div class="card empty">ยังไม่มีประกาศ</div>`}</div>`,'community'); $('#chat-form').addEventListener('submit',async e=>{e.preventDefault();const f=new FormData(e.currentTarget);try{await api('/api/messages',{method:'POST',body:JSON.stringify({text:f.get('text')})});await loadCore();renderCommunity();const box=$('.chat-messages');box.scrollTop=box.scrollHeight;}catch(err){toast(err.message,'error')}}); }
+function renderCommunity(){ const anns=state.announcements, messages=state.messages, pinned=state.pinnedMessage, admin=state.user.role==='admin'; app.innerHTML=shell(`${hero('ห้องสนทนา RubberSync','พูดคุยกับทีมงานในสวนได้โดยตรง')}${pinned?`<section class="pinned-message"><div class="pinned-label">📌 ข้อความปักหมุด · แสดง 1 วัน</div><strong>${h(pinned.user?.fullName||'ไม่ทราบชื่อ')}</strong><p>${h(pinned.text)}</p><div class="meta">หมดอายุ ${h(dt(pinned.pinnedUntil))}</div></section>`:''}<section class="card chat-card"><div class="chat-head"><div><h3>ห้องสนทนาสวนยาง</h3><div class="muted">ข้อความล่าสุดของทุกคนในระบบ</div></div></div><div class="chat-messages">${messages.length?messages.map(m=>`<article class="chat-message ${m.userId===state.user.id?'mine':''}"><div class="chat-author">${h(m.user?.fullName||'ไม่ทราบชื่อ')} <span>${h(dt(m.createdAt))}</span></div><div>${h(m.text)}</div>${admin?`<div class="chat-actions"><button class="text-link" data-pin-message="${m.id}">📌 ปักหมุด 1 วัน</button><button class="text-link" data-create-announcement="${m.id}">สร้างประกาศ</button></div>`:''}</article>`).join(''):`<div class="muted">เริ่มต้นบทสนทนาได้เลย</div>`}</div><form id="chat-form" class="chat-form"><input class="input" name="text" maxlength="1000" placeholder="พิมพ์ข้อความถึงทีมงาน..." required><button class="btn btn-primary" type="submit">ส่ง</button></form></section><div class="section-title" style="margin-top:28px"><h3>ประกาศล่าสุด</h3>${admin?`<button class="btn btn-primary" data-view="announcement">+ สร้างประกาศ</button>`:''}</div><div class="list">${anns.length?anns.map(a=>`<article class="card announcement-item"><span class="status approved">${a.audience==='all'?'ทุกคน':a.audience==='workers'?'คนงาน':'ผู้ดูแล'}</span><h4>${h(a.title)}</h4><p>${h(a.body)}</p><div class="announcement-author">โดย ${h(a.author?.fullName||'ระบบ')} · ${h(dt(a.createdAt))}</div></article>`).join(''):`<div class="card empty">ยังไม่มีประกาศ</div>`}</div>`,'community'); $('#chat-form').addEventListener('submit',async e=>{e.preventDefault();const f=new FormData(e.currentTarget);try{await api('/api/messages',{method:'POST',body:JSON.stringify({text:f.get('text')})});await loadCore();renderCommunity();const box=$('.chat-messages');box.scrollTop=box.scrollHeight;}catch(err){toast(err.message,'error')}}); }
 
 function bankInfo(bank){ return bank?.accountNumber?`${bank.bankName||'ธนาคาร'} · ${bank.accountName||'-'} · ${bank.accountNumber}`:'ยังไม่ได้ระบุข้อมูลบัญชี'; }
 function renderPayroll(){ const approved=state.requests.filter(r=>r.status==='approved'), paid=state.requests.filter(r=>r.status==='paid'); app.innerHTML=shell(`${hero('Worker Payroll','โอนเงินและแนบหลักฐานการจ่าย')}<div class="section-title"><h3>รายการรอจ่าย</h3><span class="status pending">${approved.length} รายการ</span></div><div class="list">${approved.length?approved.map(r=>`<article class="card payment-item"><div class="payment-head"><div><h4>${h(r.user?.fullName||'-')}</h4><div class="meta">${h(r.category)} · ${h(r.ref)}</div><div class="bank-info">บัญชี: ${h(bankInfo({bankName:r.user?.bankName,accountName:r.user?.bankAccountName,accountNumber:r.user?.bankAccountNumber}))}</div></div><div class="amount">${h(money(r.amount))}</div></div><div class="request-actions"><span class="status pending">รอโอน</span><button class="btn btn-primary" data-pay="${r.id}">จ่ายเงิน</button></div></article>`).join(''):`<div class="card empty">ไม่มีรายการรอจ่าย</div>`}</div><div class="section-title" style="margin-top:30px"><h3>จ่ายแล้ว</h3></div><div class="list">${paid.length?paid.map(r=>`<article class="card payment-item"><div class="payment-head"><div><span class="status paid">จ่ายแล้ว</span><h4>${h(r.user?.fullName||'-')}</h4><div class="meta">${h(r.category)} · ${h(r.ref)}</div><div class="bank-info">บัญชีที่โอน: ${h(bankInfo(r.payment?.recipientBank))}</div><div class="meta">จ่ายเมื่อ ${h(dt(r.payment?.paidAt))}</div></div><div class="amount">${h(money(r.amount))}</div></div>${r.payment?.slipUrl?`<div style="margin-top:12px"><a class="text-link" href="${h(r.payment.slipUrl)}" target="_blank">ดูหลักฐานการโอน</a></div>`:''}</article>`).join(''):`<div class="card empty">ยังไม่มีประวัติการจ่าย</div>`}</div>`,'home'); }
@@ -145,7 +150,21 @@ function renderContacts(){ const users=state.users; app.innerHTML=shell(`${hero(
 function renderReport(){ const m=state.metrics||{}; const rows=state.requests.map(r=>`<tr><td>${h(r.ref)}</td><td>${h(r.user?.fullName||'-')}</td><td>${h(r.category)}</td><td>${h(money(r.amount))}</td><td><span class="status ${r.status}">${statusText(r.status)}</span></td><td>${h(dateOnly(r.date))}</td></tr>`).join(''); app.innerHTML=shell(`${hero('รายงานภาพรวม','สรุปรายการเบิกจ่ายและสถานะ')}${metricCards()}<section class="card" style="padding:18px"><div class="table-wrap"><table class="table"><thead><tr><th>อ้างอิง</th><th>ผู้ขอ</th><th>หมวดหมู่</th><th>จำนวน</th><th>สถานะ</th><th>วันที่</th></tr></thead><tbody>${rows}</tbody></table></div></section>`,'home'); }
 
 function render(){ if(!state.user)return renderLogin(); const map={home:renderHome,request:renderRequest,history:renderHistory,'admin-requests':renderAdminRequests,'admin-history':renderAdminHistory,announcement:renderAnnouncement,community:renderCommunity,payroll:renderPayroll,settings:renderSettings,contacts:renderContacts,report:renderReport}; (map[state.view]||renderHome)(); }
-async function navigate(v){ state.view=v; if(v==='request'){state.requestStep=1;} if(['home','community','settings','contacts','history','admin-requests','admin-history','payroll','report'].includes(v)){ try{await loadCore();}catch(e){toast(e.message,'error')} } render(); window.scrollTo({top:0,behavior:'smooth'}); }
+async function navigate(v, saveHistory = true){
+  if (saveHistory && state.view !== v) state.viewHistory.push(state.view);
+  state.view = v;
+  if (v === 'request') state.requestStep = 1;
+  if(['home','community','settings','contacts','history','admin-requests','admin-history','payroll','report'].includes(v)){
+    try { await loadCore(); } catch (err) { toast(err.message,'error'); }
+  }
+  render();
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+function goBack(){
+  const previous = state.viewHistory.pop() || 'home';
+  state.view = previous;
+  render();
+}
 
 document.addEventListener('click',async e=>{
   const view=e.target.closest('[data-view]')?.dataset.view; if(view){e.preventDefault();if(view==='announcement')state.announcementDraft={title:'',body:''};document.querySelector('.modal-backdrop')?.remove();return navigate(view)}
@@ -154,6 +173,7 @@ document.addEventListener('click',async e=>{
   if(act==='login') return renderLogin();
   if(act==='forgot') return toast('สำหรับระบบจริงสามารถเชื่อม OTP/รีเซ็ตรหัสผ่านเพิ่มได้');
   if(act==='logout') return logout();
+  if(act==='go-back') return goBack();
   if(act==='refresh'){try{await loadCore();render();toast('อัปเดตข้อมูลแล้ว')}catch(err){toast(err.message,'error')}return}
   if(act==='toggle-push'){const on=e.target.classList.toggle('on');localStorage.setItem('rubbersync_push',on?'on':'off');return}
   if(act==='request-next'){state.requestStep=2;return renderRequest()}
