@@ -94,7 +94,29 @@ function renderRegister(){
 }
 
 function renderForgotPassword(){
-  app.innerHTML=`<main class="auth-page"><div class="auth-wrap"><section class="card auth-card"><button class="text-link" data-action="login">← กลับไปเข้าสู่ระบบ</button><div style="text-align:center;margin:18px 0 22px"><img class="brand-logo" src="/assets/rubbersync-logo-user.png" alt=""><h2 style="color:var(--primary);margin:10px 0 6px">เปลี่ยนรหัสผ่าน</h2><p class="muted">ยืนยันเบอร์โทรศัพท์ที่ลงทะเบียนไว้ แล้วตั้งรหัสผ่านใหม่</p></div><form id="forgot-form"><div class="field"><label>เบอร์โทรศัพท์ *</label><input class="input" name="phone" inputmode="tel" autocomplete="username" placeholder="08xxxxxxxx" required></div><div class="field"><label>รหัสผ่านใหม่ *</label><input class="input" name="password" type="password" autocomplete="new-password" minlength="8" placeholder="อย่างน้อย 8 ตัวอักษร" required></div><div class="field"><label>ยืนยันรหัสผ่านใหม่ *</label><input class="input" name="confirmPassword" type="password" autocomplete="new-password" minlength="8" placeholder="กรอกรหัสผ่านเดิมอีกครั้ง" required></div><button class="btn btn-primary btn-block" type="submit">ยืนยันและเปลี่ยนรหัสผ่าน</button></form></section></div></main>`;
+  app.innerHTML=`<main class="auth-page"><div class="auth-wrap"><section class="card auth-card"><button class="text-link" data-action="login">← กลับไปเข้าสู่ระบบ</button><div style="text-align:center;margin:18px 0 22px"><img class="brand-logo" src="/assets/rubbersync-logo-user.png" alt=""><h2 style="color:var(--primary);margin:10px 0 6px">เปลี่ยนรหัสผ่าน</h2><p class="muted">ยืนยันเบอร์โทรศัพท์ที่ลงทะเบียนไว้ แล้วตั้งรหัสผ่านใหม่</p></div>
+  <form id="forgot-form">
+    <div class="field">
+      <label>เบอร์โทรศัพท์ *</label>
+      <input class="input" name="phone" inputmode="tel" maxlength="10" oninput="this.value = this.value.replace(/[^0-9]/g, '')" autocomplete="username" placeholder="08xxxxxxxx" required>
+    </div>
+    <div class="field">
+      <label>รหัสผ่านใหม่ *</label>
+      <div style="position:relative;">
+        <input class="input" name="password" type="password" autocomplete="new-password" minlength="8" placeholder="อย่างน้อย 8 ตัวอักษร" required style="padding-right: 40px;">
+        <button type="button" data-action="toggle-password" style="position:absolute; right:10px; top:50%; transform:translateY(-50%); background:none; border:none; cursor:pointer; font-size:16px;">👁️️</button>
+      </div>
+    </div>
+    <div class="field">
+      <label>ยืนยันรหัสผ่านใหม่ *</label>
+      <div style="position:relative;">
+        <input class="input" name="confirmPassword" type="password" autocomplete="new-password" minlength="8" placeholder="กรอกรหัสผ่านเดิมอีกครั้ง" required style="padding-right: 40px;">
+        <button type="button" data-action="toggle-password" style="position:absolute; right:10px; top:50%; transform:translateY(-50%); background:none; border:none; cursor:pointer; font-size:16px;">👁️</button>
+      </div>
+    </div>
+    <button class="btn btn-primary btn-block" type="submit">ยืนยันและเปลี่ยนรหัสผ่าน</button>
+  </form></section></div></main>`;
+  
   $('#forgot-form').addEventListener('submit',async e=>{e.preventDefault();const f=new FormData(e.currentTarget);if(f.get('password')!==f.get('confirmPassword'))return toast('รหัสผ่านยืนยันไม่ตรงกัน','error');try{await api('/api/auth/reset-password',{method:'POST',body:JSON.stringify({phone:f.get('phone'),password:f.get('password')})});renderLogin();toast('เปลี่ยนรหัสผ่านสำเร็จ กรุณาเข้าสู่ระบบใหม่')}catch(err){toast(err.message,'error')}});
 }
 
