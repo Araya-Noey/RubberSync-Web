@@ -48,8 +48,17 @@ function brand(){ return `<div class="brand"><img class="brand-logo" src="/asset
 function renderLogin(){
   app.innerHTML=`<main class="auth-page"><div class="auth-wrap">${brand()}<section class="card auth-card">
     <form id="login-form">
-      <div class="field"><label>ชื่อผู้ใช้หรือเบอร์โทรศัพท์</label><input class="input" name="phone" inputmode="tel" autocomplete="username" placeholder="กรอกเบอร์โทรศัพท์" required></div>
-      <div class="field"><div class="spread"><label>รหัสผ่าน</label><button class="text-link" type="button" data-action="forgot">ลืมรหัสผ่าน?</button></div><input class="input" name="password" type="password" autocomplete="current-password" placeholder="กรุณากรอกรหัสผ่าน" required></div>
+      <div class="field">
+        <label>ชื่อผู้ใช้หรือเบอร์โทรศัพท์</label>
+        <input class="input" name="phone" inputmode="tel" maxlength="10" oninput="this.value = this.value.replace(/[^0-9]/g, '')" autocomplete="username" placeholder="กรอกเบอร์โทรศัพท์" required>
+      </div>
+      <div class="field">
+        <div class="spread"><label>รหัสผ่าน</label><button class="text-link" type="button" data-action="forgot">ลืมรหัสผ่าน?</button></div>
+        <div style="position:relative;">
+          <input class="input" name="password" type="password" autocomplete="current-password" placeholder="กรุณากรอกรหัสผ่าน" required style="padding-right: 40px;">
+          <button type="button" data-action="toggle-password" style="position:absolute; right:10px; top:50%; transform:translateY(-50%); background:none; border:none; cursor:pointer; font-size:16px;">👁️</button>
+        </div>
+      </div>
       <label class="remember"><input type="checkbox" name="remember" checked> จดจำฉันในอุปกรณ์นี้</label>
       <div class="auth-actions"><button class="btn btn-primary btn-block" type="submit">เข้าสู่ระบบ</button><button class="btn btn-outline btn-block" type="button" data-action="register">สมัครสมาชิกใหม่</button></div>
     </form>
@@ -66,13 +75,22 @@ function renderRegister(){
   app.innerHTML=`<main class="auth-page"><div class="auth-wrap"><section class="card auth-card">
     <div class="spread" style="margin-bottom:18px"><button class="text-link" data-action="login">← ย้อนกลับ</button><strong style="color:var(--primary)">RubberSync</strong></div>
     <div style="text-align:center;margin-bottom:20px"><img class="brand-logo" src="/assets/rubbersync-logo-user.png" alt=""><h2 style="color:var(--primary);margin:8px 0">สร้างบัญชีผู้ใช้</h2><p class="muted">เริ่มต้นการทำงานสวนยางพาราของคุณอย่างมีประสิทธิภาพ</p></div>
-    <form id="register-form"><div class="field"><label>ชื่อ - นามสกุล</label><input class="input" name="fullName" placeholder="กรอกชื่อและนามสกุลของคุณ" required></div>
-    <div class="field"><label>เบอร์โทรศัพท์</label><input class="input" name="phone" inputmode="tel" placeholder="08xxxxxxxx" required></div>
-    <div class="field"><label>รหัสผ่าน</label><input class="input" name="password" type="password" minlength="8" placeholder="อย่างน้อย 8 ตัวอักษร" required><div class="hint">รหัสผ่านต้องมีความยาวอย่างน้อย 8 ตัวอักษร</div></div>
-    <button class="btn btn-primary btn-block" type="submit">เสร็จสิ้น</button></form>
+    <form id="register-form">
+      <div class="field"><label>ชื่อ - นามสกุล</label><input class="input" name="fullName" placeholder="กรอกชื่อและนามสกุลของคุณ" required></div>
+      <div class="field"><label>เบอร์โทรศัพท์</label><input class="input" name="phone" inputmode="tel" maxlength="10" oninput="this.value = this.value.replace(/[^0-9]/g, '')" placeholder="08xxxxxxxx" required></div>
+      <div class="field">
+        <label>รหัสผ่าน</label>
+        <div style="position:relative;">
+          <input class="input" name="password" type="password" minlength="8" placeholder="อย่างน้อย 8 ตัวอักษร" required style="padding-right: 40px;">
+          <button type="button" data-action="toggle-password" style="position:absolute; right:10px; top:50%; transform:translateY(-50%); background:none; border:none; cursor:pointer; font-size:16px;">👁️</button>
+        </div>
+        <div class="hint">รหัสผ่านต้องมีความยาวอย่างน้อย 8 ตัวอักษร</div>
+      </div>
+      <button class="btn btn-primary btn-block" type="submit">เสร็จสิ้น</button>
+    </form>
     <div style="text-align:center;margin-top:18px">มีบัญชีผู้ใช้แล้ว? <button class="text-link" data-action="login">เข้าสู่ระบบ</button></div>
   </section></div></main>`;
-  $('#register-form').addEventListener('submit', async e=>{e.preventDefault();const f=new FormData(e.currentTarget);try{const d=await api('/api/auth/register',{method:'POST',body:JSON.stringify({fullName:f.get('fullName'),phone:f.get('phone'),password:f.get('password')})});setToken(d.token,d.user,false);await loadCore();state.view='home';render();toast('สมัครสมาชิกสำเร็จ')}catch(err){toast(err.message,'error')}});
+  $('#register-form').addEventListener('submit', async e=>{e.preventDefault();const f=new FormData(e.currentTarget);try{const d=await api('/api/auth/register',{method:'POST',body:JSON.stringify({fullName:f.get('fullName'),phone:f.get('phone'),password:f.get('password')})});setToken(d.token,d.user);await loadCore();state.view='home';render();toast('สมัครสมาชิกสำเร็จ')}catch(err){toast(err.message,'error')}});
 }
 
 function renderForgotPassword(){
@@ -155,28 +173,46 @@ async function navigate(v){ state.view=v; if(v==='request'){state.requestStep=1;
 document.addEventListener('click',async e=>{
   const view=e.target.closest('[data-view]')?.dataset.view; if(view){e.preventDefault();if(view==='announcement')state.announcementDraft={title:'',body:''};document.querySelector('.modal-backdrop')?.remove();return navigate(view)}
   const act=e.target.closest('[data-action]')?.dataset.action;
+  
   if(act==='register') return renderRegister();
   if(act==='login') return renderLogin();
   if(act==='forgot') return renderForgotPassword();
   if(act==='logout') return logout();
   if(act==='refresh'){try{await loadCore();render();toast('อัปเดตข้อมูลแล้ว')}catch(err){toast(err.message,'error')}return}
   if(act==='toggle-push'){const on=e.target.classList.toggle('on');localStorage.setItem('rubbersync_push',on?'on':'off');return}
+  
+  if(act==='toggle-password'){
+    const btn = e.target.closest('button');
+    const inp = btn.previousElementSibling;
+    if(inp && inp.tagName === 'INPUT'){
+      if(inp.type === 'password'){
+        inp.type = 'text';
+        btn.textContent = '🙈';
+      } else {
+        inp.type = 'password';
+        btn.textContent = '👁️';
+      }
+    }
+    return;
+  }
+
   if(act==='request-next'){state.requestStep=2;return renderRequest()}
   if(act==='request-back'){state.requestStep=Math.max(1,state.requestStep-1);return renderRequest()}
   if(act==='request-submit') return submitRequest();
+  
   const cat=e.target.closest('[data-category]')?.dataset.category; if(cat){state.requestDraft.category=cat;return renderRequest()}
   const aud=e.target.closest('[data-audience]')?.dataset.audience; if(aud){state.audience=aud;return renderAnnouncement()}
   const review=e.target.closest('[data-review]')?.dataset.review; if(review)return openReview(review);
   const approve=e.target.closest('[data-approve]')?.dataset.approve; if(approve)return updateStatus(approve,'approved');
   const reject=e.target.closest('[data-reject]')?.dataset.reject; if(reject){const m=modal(`<h3>ยืนยันไม่อนุมัติรายการ</h3><p>ต้องการปฏิเสธคำขอนี้หรือไม่?</p><div class="modal-actions"><button class="btn btn-outline" data-action="close-modal">ยกเลิก</button><button class="btn btn-danger" data-confirm-reject="${reject}">ปฏิเสธ</button></div>`);return}
   const cr=e.target.closest('[data-confirm-reject]')?.dataset.confirmReject;if(cr)return updateStatus(cr,'rejected');
+  
   if(act==='close-modal') return e.target.closest('.modal-backdrop')?.remove();
   const pay=e.target.closest('[data-pay]')?.dataset.pay;if(pay)return openPay(pay);
   const receipt=e.target.closest('[data-view-receipt]')?.dataset.viewReceipt;if(receipt)return openReceipt(receipt);
   const pin=e.target.closest('[data-pin-message]')?.dataset.pinMessage;if(pin){try{await api(`/api/messages/${pin}/pin`,{method:'POST',body:'{}'});await loadCore();renderCommunity();toast('ปักหมุดข้อความแล้ว จะแสดงเป็นเวลา 1 วัน')}catch(err){toast(err.message,'error')}return}
   const createAnnouncement=e.target.closest('[data-create-announcement]')?.dataset.createAnnouncement;if(createAnnouncement){const message=state.messages.find(item=>item.id===createAnnouncement);if(!message)return;state.audience='all';state.announcementDraft={title:'ประกาศจากห้องสนทนา',body:message.text};return navigate('announcement')}
 });
-
 
 (async function init(){
   if('serviceWorker' in navigator){ navigator.serviceWorker.register('/sw.js').catch(()=>{}); }
