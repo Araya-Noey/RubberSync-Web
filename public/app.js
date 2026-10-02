@@ -51,7 +51,7 @@ function renderLogin(){
     <form id="login-form">
       <div class="field"><label>ชื่อผู้ใช้หรือเบอร์โทรศัพท์</label><input class="input" name="phone" type="tel" inputmode="numeric" autocomplete="username" maxlength="10" minlength="10" pattern="[0-9]{10}" title="กรุณากรอกตัวเลข 10 หลัก" placeholder="กรอกเบอร์โทรศัพท์" required></div>
       <div class="field"><div class="spread"><label>รหัสผ่าน</label><button class="text-link" type="button" data-action="forgot">ลืมรหัสผ่าน?</button></div><div class="password-control"><input class="input" name="password" type="password" autocomplete="current-password" placeholder="กรุณากรอกรหัสผ่าน" required><button class="password-toggle" type="button" data-password-toggle aria-label="แสดงรหัสผ่าน" title="แสดงรหัสผ่าน"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/></svg></button></div></div>
-      <div class="test-account-actions"><button class="btn btn-outline" type="button" data-test-account="user">บัญชีผู้ใช้ทดสอบ</button><button class="btn btn-outline" type="button" data-test-account="admin">บัญชีแอดมินทดสอบ</button></div>
+      <div class="test-account-actions"><button class="btn btn-outline" type="button" data-test-account="user">User</button><button class="btn btn-outline" type="button" data-test-account="admin">Addmin</button></div>
       <label class="remember"><input type="checkbox" name="remember" checked> จดจำฉันในอุปกรณ์นี้</label>
       <div class="auth-actions"><button class="btn btn-primary btn-block" type="submit">เข้าสู่ระบบ</button><button class="btn btn-outline btn-block" type="button" data-action="register">สมัครสมาชิกใหม่</button></div>
     </form>
