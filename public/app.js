@@ -49,12 +49,12 @@ function brand(){ return `<div class="brand"><img class="brand-logo" src="/asset
 function renderLogin(){
   app.innerHTML=`<main class="auth-page"><div class="auth-wrap">${brand()}<section class="card auth-card">
     <form id="login-form">
-      <div class="field"><label>ชื่อผู้ใช้หรือเบอร์โทรศัพท์</label><input class="input" name="phone" inputmode="tel" autocomplete="username" placeholder="กรอกเบอร์โทรศัพท์" required></div>
+      <div class="field"><label>ชื่อผู้ใช้หรือเบอร์โทรศัพท์</label><input class="input" name="phone" type="tel" inputmode="numeric" autocomplete="username" maxlength="10" minlength="10" pattern="[0-9]{10}" title="กรุณากรอกตัวเลข 10 หลัก" placeholder="กรอกเบอร์โทรศัพท์" required></div>
       <div class="field"><div class="spread"><label>รหัสผ่าน</label><button class="text-link" type="button" data-action="forgot">ลืมรหัสผ่าน?</button></div><div class="password-control"><input class="input" name="password" type="password" autocomplete="current-password" placeholder="กรุณากรอกรหัสผ่าน" required><button class="password-toggle" type="button" data-password-toggle aria-label="แสดงรหัสผ่าน" title="แสดงรหัสผ่าน"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/></svg></button></div></div>
+      <div class="test-account-actions"><button class="btn btn-outline" type="button" data-test-account="user">บัญชีผู้ใช้ทดสอบ</button><button class="btn btn-outline" type="button" data-test-account="admin">บัญชีแอดมินทดสอบ</button></div>
       <label class="remember"><input type="checkbox" name="remember" checked> จดจำฉันในอุปกรณ์นี้</label>
       <div class="auth-actions"><button class="btn btn-primary btn-block" type="submit">เข้าสู่ระบบ</button><button class="btn btn-outline btn-block" type="button" data-action="register">สมัครสมาชิกใหม่</button></div>
     </form>
-    <div style="margin-top:18px;font-size:12px;color:var(--muted);text-align:center">บัญชีทดสอบ User: 0800000001 / 12345678<br>Admin: 0800000000 / 12345678</div>
   </section></div></main>`;
   $('#login-form').addEventListener('submit', onLogin);
 }
@@ -68,7 +68,7 @@ function renderRegister(){
     <div class="spread" style="margin-bottom:18px"><button class="text-link" data-action="login">← ย้อนกลับ</button><strong style="color:var(--primary)">RubberSync</strong></div>
     <div style="text-align:center;margin-bottom:20px"><img class="brand-logo" src="/assets/rubbersync-logo-user.png" alt=""><h2 style="color:var(--primary);margin:8px 0">สร้างบัญชีผู้ใช้</h2><p class="muted">เริ่มต้นการทำงานสวนยางพาราของคุณอย่างมีประสิทธิภาพ</p></div>
     <form id="register-form"><div class="field"><label>ชื่อ - นามสกุล</label><input class="input" name="fullName" placeholder="กรอกชื่อและนามสกุลของคุณ" required></div>
-    <div class="field"><label>เบอร์โทรศัพท์</label><input class="input" name="phone" inputmode="tel" placeholder="08xxxxxxxx" required></div>
+    <div class="field"><label>เบอร์โทรศัพท์</label><input class="input" name="phone" type="tel" inputmode="numeric" maxlength="10" minlength="10" pattern="[0-9]{10}" title="กรุณากรอกตัวเลข 10 หลัก" placeholder="08xxxxxxxx" required></div>
     <div class="field"><label>รหัสผ่าน</label><div class="password-control"><input class="input" name="password" type="password" minlength="8" placeholder="อย่างน้อย 8 ตัวอักษร" required><button class="password-toggle" type="button" data-password-toggle aria-label="แสดงรหัสผ่าน" title="แสดงรหัสผ่าน"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/></svg></button></div><div class="hint">รหัสผ่านต้องมีความยาวอย่างน้อย 8 ตัวอักษร</div></div>
     <button class="btn btn-primary btn-block" type="submit">เสร็จสิ้น</button></form>
     <div style="text-align:center;margin-top:18px">มีบัญชีผู้ใช้แล้ว? <button class="text-link" data-action="login">เข้าสู่ระบบ</button></div>
@@ -166,10 +166,12 @@ function goBack(){
   render();
 }
 
+document.addEventListener('input',e=>{if(e.target.matches('input[name="phone"]'))e.target.value=e.target.value.replace(/[^0-9]/g,'').slice(0,10)});
 document.addEventListener('click',async e=>{
   const passwordToggle=e.target.closest('[data-password-toggle]'); if(passwordToggle){const input=passwordToggle.parentElement.querySelector('input');const visible=input.type==='password';input.type=visible?'text':'password';passwordToggle.setAttribute('aria-label',visible?'ซ่อนรหัสผ่าน':'แสดงรหัสผ่าน');passwordToggle.title=visible?'ซ่อนรหัสผ่าน':'แสดงรหัสผ่าน';passwordToggle.classList.toggle('is-visible',visible);return}
   const view=e.target.closest('[data-view]')?.dataset.view; if(view){e.preventDefault();if(view==='announcement')state.announcementDraft={title:'',body:''};document.querySelector('.modal-backdrop')?.remove();return navigate(view)}
   const act=e.target.closest('[data-action]')?.dataset.action;
+  const testAccount=e.target.closest('[data-test-account]')?.dataset.testAccount;if(testAccount){const credentials=testAccount==='admin'?{phone:'0800000000',password:'12345678'}:{phone:'0800000001',password:'12345678'};const form=$('#login-form');form.elements.phone.value=credentials.phone;form.elements.password.value=credentials.password;return}
   if(act==='register') return renderRegister();
   if(act==='login') return renderLogin();
   if(act==='forgot') return toast('สำหรับระบบจริงสามารถเชื่อม OTP/รีเซ็ตรหัสผ่านเพิ่มได้');
