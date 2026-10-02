@@ -50,7 +50,7 @@ function renderLogin(){
   app.innerHTML=`<main class="auth-page"><div class="auth-wrap">${brand()}<section class="card auth-card">
     <form id="login-form">
       <div class="field"><label>ชื่อผู้ใช้หรือเบอร์โทรศัพท์</label><input class="input" name="phone" inputmode="tel" autocomplete="username" placeholder="กรอกเบอร์โทรศัพท์" required></div>
-      <div class="field"><div class="spread"><label>รหัสผ่าน</label><button class="text-link" type="button" data-action="forgot">ลืมรหัสผ่าน?</button></div><input class="input" name="password" type="password" autocomplete="current-password" placeholder="กรุณากรอกรหัสผ่าน" required></div>
+      <div class="field"><div class="spread"><label>รหัสผ่าน</label><button class="text-link" type="button" data-action="forgot">ลืมรหัสผ่าน?</button></div><div class="password-control"><input class="input" name="password" type="password" autocomplete="current-password" placeholder="กรุณากรอกรหัสผ่าน" required><button class="password-toggle" type="button" data-password-toggle aria-label="แสดงรหัสผ่าน" title="แสดงรหัสผ่าน"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/></svg></button></div></div>
       <label class="remember"><input type="checkbox" name="remember" checked> จดจำฉันในอุปกรณ์นี้</label>
       <div class="auth-actions"><button class="btn btn-primary btn-block" type="submit">เข้าสู่ระบบ</button><button class="btn btn-outline btn-block" type="button" data-action="register">สมัครสมาชิกใหม่</button></div>
     </form>
@@ -69,7 +69,7 @@ function renderRegister(){
     <div style="text-align:center;margin-bottom:20px"><img class="brand-logo" src="/assets/rubbersync-logo-user.png" alt=""><h2 style="color:var(--primary);margin:8px 0">สร้างบัญชีผู้ใช้</h2><p class="muted">เริ่มต้นการทำงานสวนยางพาราของคุณอย่างมีประสิทธิภาพ</p></div>
     <form id="register-form"><div class="field"><label>ชื่อ - นามสกุล</label><input class="input" name="fullName" placeholder="กรอกชื่อและนามสกุลของคุณ" required></div>
     <div class="field"><label>เบอร์โทรศัพท์</label><input class="input" name="phone" inputmode="tel" placeholder="08xxxxxxxx" required></div>
-    <div class="field"><label>รหัสผ่าน</label><input class="input" name="password" type="password" minlength="8" placeholder="อย่างน้อย 8 ตัวอักษร" required><div class="hint">รหัสผ่านต้องมีความยาวอย่างน้อย 8 ตัวอักษร</div></div>
+    <div class="field"><label>รหัสผ่าน</label><div class="password-control"><input class="input" name="password" type="password" minlength="8" placeholder="อย่างน้อย 8 ตัวอักษร" required><button class="password-toggle" type="button" data-password-toggle aria-label="แสดงรหัสผ่าน" title="แสดงรหัสผ่าน"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/></svg></button></div><div class="hint">รหัสผ่านต้องมีความยาวอย่างน้อย 8 ตัวอักษร</div></div>
     <button class="btn btn-primary btn-block" type="submit">เสร็จสิ้น</button></form>
     <div style="text-align:center;margin-top:18px">มีบัญชีผู้ใช้แล้ว? <button class="text-link" data-action="login">เข้าสู่ระบบ</button></div>
   </section></div></main>`;
@@ -167,6 +167,7 @@ function goBack(){
 }
 
 document.addEventListener('click',async e=>{
+  const passwordToggle=e.target.closest('[data-password-toggle]'); if(passwordToggle){const input=passwordToggle.parentElement.querySelector('input');const visible=input.type==='password';input.type=visible?'text':'password';passwordToggle.setAttribute('aria-label',visible?'ซ่อนรหัสผ่าน':'แสดงรหัสผ่าน');passwordToggle.title=visible?'ซ่อนรหัสผ่าน':'แสดงรหัสผ่าน';passwordToggle.classList.toggle('is-visible',visible);return}
   const view=e.target.closest('[data-view]')?.dataset.view; if(view){e.preventDefault();if(view==='announcement')state.announcementDraft={title:'',body:''};document.querySelector('.modal-backdrop')?.remove();return navigate(view)}
   const act=e.target.closest('[data-action]')?.dataset.action;
   if(act==='register') return renderRegister();
