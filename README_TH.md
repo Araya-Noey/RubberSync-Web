@@ -26,6 +26,19 @@ User
 - เบอร์: `0800000001`
 - รหัสผ่าน: `12345678`
 
+## เชื่อม Discord Chat
+
+1. สร้าง Discord Bot และเชิญ Bot เข้า Server ที่ต้องการ
+2. เปิด Developer Mode ใน Discord แล้วคัดลอก Channel ID ของห้องแชท
+3. สร้างไฟล์ `.env` ที่โฟลเดอร์หลักจาก `.env.example` แล้วตั้งค่า:
+
+```env
+DISCORD_BOT_TOKEN=ใส่_Bot_Token_ของคุณ
+DISCORD_CHANNEL_ID=ใส่_Channel_ID_ของคุณ
+```
+
+Bot ต้องมีสิทธิ์ `View Channel`, `Read Message History` และ `Send Messages` จึงจะแสดงประวัติและส่งข้อความจาก RubberSync ได้
+
 Admin
 - เบอร์: `0800000000`
 - รหัสผ่าน: `12345678`

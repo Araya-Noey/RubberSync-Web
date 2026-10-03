@@ -8,8 +8,20 @@ const ROOT = __dirname;
 const PUBLIC = path.join(ROOT, 'public');
 const DATA_DIR = path.join(ROOT, 'data');
 const DB_FILE = path.join(DATA_DIR, 'db.json');
+function loadEnvFile() {
+  const file = path.join(ROOT, '.env');
+  if (!fs.existsSync(file)) return;
+  for (const line of fs.readFileSync(file, 'utf8').split(/\r?\n/)) {
+    const match = line.match(/^\s*([A-Z][A-Z0-9_]*)\s*=\s*(.*?)\s*$/);
+    if (!match || process.env[match[1]]) continue;
+    process.env[match[1]] = match[2].replace(/^['"]|['"]$/g, '');
+  }
+}
+loadEnvFile();
 const PORT = Number(process.env.PORT || 8080);
 const AUTH_SECRET = process.env.AUTH_SECRET || 'rubbersync-dev-secret-change-me';
+const DISCORD_BOT_TOKEN = process.env.DISCORD_BOT_TOKEN || '';
+const DISCORD_CHANNEL_ID = process.env.DISCORD_CHANNEL_ID || '';
 
 fs.mkdirSync(DATA_DIR, { recursive: true });
 fs.mkdirSync(path.join(PUBLIC, 'uploads'), { recursive: true });
@@ -61,7 +73,6 @@ function initialDb() {
       { id: 'ann_demo_1', title: 'เตรียมตัวเก็บยาง', body: 'จะเริ่มประมูลยางในวันที่ 25 สิงหาคม 2569 จะแจ้งราคาประมูลและวันเก็บให้ทราบอีกครั้ง', audience: 'all', createdBy: adminId, createdAt: now() }
     ],
     payments: [],
-    messages: [{ id: 'msg_welcome', userId: adminId, text: 'ยินดีต้อนรับเข้าสู่ห้องสนทนาสวนยางครับ', createdAt: now() }],
     settings: {
       appName: 'RubberSync',
       version: '1.0.0'
@@ -120,11 +131,56 @@ function requireAuth(req, res, role) {
   if (role && user.role !== role) { json(res, 403, { error: 'forbidden' }); return null; }
   return user;
 }
+function discordConfigured() { return Boolean(DISCORD_BOT_TOKEN && /^\d{16,22}$/.test(DISCORD_CHANNEL_ID)); }
+async function discordApi(pathname, options = {}) {
+  const response = await fetch(`https://discord.com/api/v10${pathname}`, {
+    ...options,
+    headers: { Authorization: `Bot ${DISCORD_BOT_TOKEN}`, 'Content-Type':'application/json', ...(options.headers || {}) }
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(data.message || `discord_${response.status}`);
+  return data;
+}
+function discordMessageView(message) {
+  return {
+    id: message.id,
+    text: message.content || '',
+    createdAt: message.timestamp,
+    author: { id: message.author?.id || '', name: message.member?.nick || message.author?.global_name || message.author?.username || 'Discord user', avatar: message.author?.avatar || '' },
+    attachments: (message.attachments || []).map(a => ({ id:a.id, name:a.filename, url:a.url, contentType:a.content_type || '' }))
+  };
+}
 async function handleApi(req, res, url) {
   const method = req.method;
   const p = url.pathname;
 
   if (p === '/api/health' && method === 'GET') return json(res, 200, { ok: true, app: 'RubberSync', time: now() });
+
+  if (p === '/api/discord/status' && method === 'GET') {
+    const user = requireAuth(req, res); if (!user) return;
+    return json(res, 200, { configured: discordConfigured() });
+  }
+
+  if (p === '/api/discord/messages' && method === 'GET') {
+    const user = requireAuth(req, res); if (!user) return;
+    if (!discordConfigured()) return json(res, 200, { configured:false, messages:[] });
+    try {
+      const messages = await discordApi(`/channels/${DISCORD_CHANNEL_ID}/messages?limit=50`);
+      return json(res, 200, { configured:true, messages: messages.reverse().map(discordMessageView) });
+    } catch (e) { return json(res, 502, { error:'discord_unavailable', detail:e.message }); }
+  }
+
+  if (p === '/api/discord/messages' && method === 'POST') {
+    const user = requireAuth(req, res); if (!user) return;
+    if (!discordConfigured()) return json(res, 503, { error:'discord_not_configured' });
+    const body = await getBody(req);
+    const text = String(body.text || '').trim();
+    if (!text || text.length > 1800) return json(res, 400, { error:'invalid_message' });
+    try {
+      const message = await discordApi(`/channels/${DISCORD_CHANNEL_ID}/messages`, { method:'POST', body:JSON.stringify({ content:`**${user.fullName}**\n${text}` }) });
+      return json(res, 201, { message:discordMessageView(message) });
+    } catch (e) { return json(res, 502, { error:'discord_unavailable', detail:e.message }); }
+  }
 
   if (p === '/api/auth/login' && method === 'POST') {
     const body = await getBody(req);
@@ -247,38 +303,6 @@ async function handleApi(req, res, url) {
     const a = { id: id('ann'), title, body: text, audience, createdBy: admin.id, createdAt: now() };
     db.announcements.push(a); saveDb();
     return json(res, 201, { announcement: a });
-  }
-
-  if (p === '/api/messages' && method === 'GET') {
-    const user = requireAuth(req, res); if (!user) return;
-    const allMessages = db.messages || [];
-    const pinned = allMessages.filter(message => Date.parse(message.pinnedUntil || '') > Date.now()).sort((a,b) => b.pinnedAt.localeCompare(a.pinnedAt))[0] || null;
-    const messageView = message => ({ ...message, user: safeUser(db.users.find(u => u.id === message.userId) || { id:'', fullName:'ไม่ทราบชื่อ', phone:'', role:'user', createdAt:'' }) });
-    return json(res, 200, { messages: allMessages.slice(-100).map(messageView), pinnedMessage: pinned ? messageView(pinned) : null });
-  }
-
-  if (p === '/api/messages' && method === 'POST') {
-    const user = requireAuth(req, res); if (!user) return;
-    const body = await getBody(req);
-    const text = String(body.text || '').trim();
-    if (!text || text.length > 1000) return json(res, 400, { error: 'invalid_message' });
-    if (!Array.isArray(db.messages)) db.messages = [];
-    const message = { id: id('msg'), userId: user.id, text, createdAt: now() };
-    db.messages.push(message); saveDb();
-    return json(res, 201, { message: { ...message, user: safeUser(user) } });
-  }
-
-  const pinMatch = p.match(/^\/api\/messages\/([^/]+)\/pin$/);
-  if (pinMatch && method === 'POST') {
-    const admin = requireAuth(req, res, 'admin'); if (!admin) return;
-    const message = (db.messages || []).find(item => item.id === pinMatch[1]);
-    if (!message) return json(res, 404, { error: 'not_found' });
-    for (const item of db.messages) { delete item.pinnedUntil; delete item.pinnedAt; delete item.pinnedBy; }
-    message.pinnedAt = now();
-    message.pinnedUntil = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
-    message.pinnedBy = admin.id;
-    saveDb();
-    return json(res, 200, { message, pinnedUntil: message.pinnedUntil });
   }
 
   if (p === '/api/payments' && method === 'GET') {
