@@ -1,77 +1,62 @@
 {
-  "version": 1,
+  "version": 2,
   "users": [
     {
-      "id": "usr_demo_user",
-      "fullName": "สมจิตร เดือนอิน",
-      "phone": "0800000001",
-      "role": "user",
-      "passwordSalt": "240008dbbb07c81a1cda0a4586e92ef9",
-      "passwordHash": "f78e80c1728338dfe10e29f1f2aba913434c23c6a9c7f3c927c87b44d48189d42f69d37ab801e54427b508bbe7dab3e3413b6764c74eb046333dbc2f60173a88",
-      "createdAt": "2026-09-06T03:45:46.592Z"
-    },
-    {
-      "id": "usr_demo_admin",
+      "id": "usr_demo_owner",
       "fullName": "ธนกฤต ศุภทรัพย์",
       "phone": "0800000000",
-      "role": "admin",
-      "passwordSalt": "7110bdeff75d40b0770fd919ad423204",
-      "passwordHash": "9fb94f91db35bc2afbba7a0734274d3175a7ea2d28230a81e1cf001dd81b79c52fa747b05e2be7905e3cbd42e354861f1692bd14b58807ac8aa39c945c692c2c",
-      "createdAt": "2026-09-06T03:45:46.593Z"
+      "role": "owner",
+      "passwordSalt": "95cb88ceb84b4ebf898014251542fbed",
+      "passwordHash": "dbd4847f375d82493441a69d321badc9539709a1dbb3148a22333a1ff615cbaeb89721030b0b6a9b8394fb445c75f898b42a9da9016921ade3bcb4e16d855501",
+      "createdAt": "2026-10-02T17:17:20.638Z"
     },
     {
-      "id": "usr_mtsbn0ko_3b9ffa4b",
-      "fullName": "อารญา เดือนอิน",
-      "phone": "0955485573",
-      "role": "user",
-      "passwordSalt": "1b9790f89b310d7100335322c260b6b2",
-      "passwordHash": "eca23a30aefe9e24a4a115029b8f35069f31399469d59524c4ba3adff17355599adc5ab29d6ffd101df28951439ae5155cf73a670e15bd0f73d57620c0fa5117",
-      "createdAt": "2026-09-08T07:01:40.392Z"
+      "id": "usr_demo_manager",
+      "fullName": "คนดูแลสวน ตัวอย่าง",
+      "phone": "0800000002",
+      "role": "garden_manager",
+      "passwordSalt": "887df668137a50153f9a0554846932f0",
+      "passwordHash": "f3d73f316d8345471b94571b8d1ab1236c8907af6b44e7fe54e6b3b77d0e81701c4accef6448c47a9daad31dc5a2915e35135a3bd91b2a6751d6bce56fd96307",
+      "createdAt": "2026-10-02T17:17:20.638Z"
+    },
+    {
+      "id": "usr_demo_supervisor",
+      "fullName": "คนดูแลคนงาน ตัวอย่าง",
+      "phone": "0800000003",
+      "role": "worker_supervisor",
+      "passwordSalt": "b64107c6c43d26c118f01938fb3c8ca6",
+      "passwordHash": "c655a0b4e2f78d5534069e23d2ad5f1a252353c3f11bae7be6700071804eeee0a507db9bc40bf895dbfdbee1dc547bee854ddaead6ac43f6901825a2a79c7bac",
+      "createdAt": "2026-10-02T17:17:20.638Z"
+    },
+    {
+      "id": "usr_demo_worker",
+      "fullName": "สมจิตร เดือนอิน",
+      "phone": "0800000001",
+      "role": "worker",
+      "passwordSalt": "9c84ec644c66bc663b20982c819ea102",
+      "passwordHash": "df158ffaf0e7e75d41f533bc7f8b65efbb05995e6c5bba22ab20cea152250803554c775e4cb99e938320bfe37a77822728152b076714845f4cd07367d73fe367",
+      "createdAt": "2026-10-02T17:17:20.638Z",
+      "bankName": "กสิกรไทย",
+      "bankAccountName": "สมจิตร เดือนอิน",
+      "bankAccountNumber": "1738443663"
     }
   ],
   "requests": [
     {
       "id": "req_demo_1",
       "ref": "TXN-5678-RUBB",
-      "userId": "usr_demo_user",
+      "userId": "usr_demo_worker",
       "category": "ค่าน้ำมัน",
       "amount": 2000,
       "date": "2026-08-21",
       "note": "โซน A น้ำมันไม่พอ",
+      "receiptUrl": "",
+      "duplicateSuspected": false,
       "status": "rejected",
-      "createdAt": "2026-09-06T03:45:46.593Z",
-      "updatedAt": "2026-09-08T06:58:46.613Z",
-      "reviewedBy": "usr_demo_admin",
-      "reviewedAt": "2026-09-08T06:58:46.613Z"
-    },
-    {
-      "id": "req_mtsbblkn_2b08af5f",
-      "ref": "TXN-7737-RUBB",
-      "userId": "usr_demo_user",
-      "category": "ค่าน้ำมัน",
-      "amount": 2000,
-      "date": "2026-09-08",
-      "note": "yrtytt",
-      "status": "approved",
-      "createdAt": "2026-09-08T06:52:47.737Z",
-      "updatedAt": "2026-09-08T06:58:32.140Z",
-      "reviewedBy": "usr_demo_admin",
-      "reviewedAt": "2026-09-08T06:58:32.140Z"
-    },
-    {
-      "id": "req_mty8zcq3_82b01911",
-      "ref": "TXN-4221-RUBB",
-      "userId": "usr_demo_user",
-      "category": "ค่าน้ำกรด",
-      "amount": 2000,
-      "date": "2026-09-12",
-      "note": "-",
-      "receiptUrl": "/uploads/req_mty8zcq3_82b01911-receipt-1789209234219.jpg",
-      "status": "rejected",
-      "createdAt": "2026-09-12T10:33:54.221Z",
-      "updatedAt": "2026-09-12T10:36:02.091Z",
-      "reviewedBy": "usr_demo_admin",
-      "reviewedAt": "2026-09-12T10:36:02.091Z"
+      "createdAt": "2026-10-02T17:17:20.638Z",
+      "updatedAt": "2026-10-02T17:22:20.732Z",
+      "reviewedBy": "usr_demo_owner",
+      "reviewedAt": "2026-10-02T17:22:20.731Z"
     }
   ],
   "announcements": [
@@ -80,27 +65,56 @@
       "title": "เตรียมตัวเก็บยาง",
       "body": "จะเริ่มประมูลยางในวันที่ 25 สิงหาคม 2569 จะแจ้งราคาประมูลและวันเก็บให้ทราบอีกครั้ง",
       "audience": "all",
-      "createdBy": "usr_demo_admin",
-      "createdAt": "2026-09-06T03:45:46.593Z"
+      "createdBy": "usr_demo_owner",
+      "createdAt": "2026-10-02T17:17:20.638Z"
+    }
+  ],
+  "saleRounds": [
+    {
+      "id": "sale_demo_1",
+      "title": "รอบขายยาง สิงหาคม 2569",
+      "collectionDate": "2026-08-24",
+      "saleDate": "2026-08-25",
+      "price": 58.5,
+      "note": "ราคาตัวอย่าง",
+      "createdBy": "usr_demo_manager",
+      "createdAt": "2026-10-02T17:17:20.638Z",
+      "updatedAt": "2026-10-02T17:17:20.638Z"
+    }
+  ],
+  "messages": [
+    {
+      "id": "msg_demo_1",
+      "roomId": "main",
+      "userId": "usr_demo_owner",
+      "authorName": "ธนกฤต ศุภทรัพย์",
+      "content": "ยินดีต้อนรับสู่ห้องสื่อสาร RubberSync",
+      "source": "system",
+      "discordMessageId": "",
+      "createdAt": "2026-10-02T17:17:20.638Z"
+    }
+  ],
+  "notifications": [
+    {
+      "id": "ntf_mur8dnek_93ecca53",
+      "userId": "usr_demo_worker",
+      "roles": [],
+      "title": "สถานะคำขอเบิกเปลี่ยนแปลง",
+      "body": "TXN-5678-RUBB: ไม่อนุมัติ",
+      "type": "expense",
+      "refId": "req_demo_1",
+      "key": "",
+      "createdAt": "2026-10-02T17:22:20.732Z",
+      "readBy": [
+        "usr_demo_worker"
+      ]
     }
   ],
   "payments": [],
-  "messages": [
-    {
-      "id": "msg_welcome",
-      "userId": "usr_demo_admin",
-      "text": "ยินดีต้อนรับเข้าสู่ห้องสนทนาสวนยางครับ",
-      "createdAt": "2026-09-06T03:45:46.593Z"
-    },
-    {
-      "id": "msg_mtxzlxih_5dcab3c8",
-      "userId": "usr_demo_user",
-      "text": "สวัสดี",
-      "createdAt": "2026-09-12T06:11:31.434Z"
-    }
-  ],
   "settings": {
+    "discordInviteUrl": "[https://discord.gg/RpNKvx5gE](https://discord.gg/RpNKvx5gE",
     "appName": "RubberSync",
-    "version": "1.0.0"
+    "version": "2.0.0",
+    "scheduleReminderDays": 1
   }
 }

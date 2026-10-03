@@ -1,50 +1,81 @@
-# RubberSync Web — เวอร์ชันใช้งานจริงบนเว็บ
+# RubberSync Web v2 — ระบบบริหารจัดการสวนยาง
 
-โปรเจกต์นี้เขียนใหม่ทั้งหมด เป็นเว็บ Responsive + PWA พร้อม Backend ในตัว ใช้ได้บน Windows, macOS, Android และ iPhone ผ่าน Browser
+เวอร์ชันนี้ปรับให้ตรงกับ Requirements หลัก 3 ระบบมากขึ้น: ระบบติดต่อสื่อสาร, ระบบจัดการรอบขายยางและแจ้งเตือน, และระบบเบิกค่าใช้จ่าย
 
-## จุดสำคัญ
-- ไม่ใช้ React Native / Expo
-- ไม่ต้อง `npm install` เพราะ Backend ใช้ Node.js built-in modules เท่านั้น
-- ข้อมูลผู้ใช้ / คำขอ / ประกาศ / การจ่ายเงิน บันทึกลง `data/db.json`
-- มือถือหลายเครื่องที่เข้า URL ของคอม/เซิร์ฟเวอร์เครื่องเดียวกัน จะเห็นข้อมูลชุดเดียวกัน
-- รองรับแนบใบเสร็จในคำขอเบิก และสลิปยืนยันการจ่ายเงินจริง (PNG/JPG/WebP สูงสุด 5 MB)
-- มีห้องสนทนากลางภายในระบบ และรายชื่อพร้อมข้อมูลติดต่อของผู้ใช้
-- รองรับ PWA สามารถ Add to Home Screen ได้
+## ฟังก์ชันหลัก
+- ผู้ใช้ 4 บทบาท: เจ้าของสวน, คนดูแลสวน, คนดูแลคนงาน, คนงานกรีดยาง
+- ห้องสื่อสารกลุ่มภายใน RubberSync
+- ส่งข้อความจาก RubberSync ไป Discord ผ่าน Webhook
+- รับข้อความจาก Discord กลับมาแสดงใน RubberSync ผ่าน Discord Bot Token + Channel ID
+- เก็บแหล่งที่มาของข้อความว่า RubberSync หรือ Discord และกันข้อความ Discord ซ้ำด้วย Discord Message ID
+- รอบขายยาง: วันเก็บยาง, วันขายยาง, ราคายาง/ราคาประมูล, ประวัติรอบขาย
+- แจ้งเตือนกำหนดการและแจ้งเมื่อมีการเปลี่ยนวันเก็บ/วันขาย
+- คนงานสร้างคำขอเบิก พร้อมแนบใบเสร็จ/หลักฐาน PNG/JPG/WebP สูงสุด 5 MB
+- เจ้าของสวนอนุมัติ/ไม่อนุมัติ
+- คนดูแลสวนหรือเจ้าของสวนบันทึกการจ่ายเงินและแนบสลิป
+- ผู้ใช้บันทึกบัญชีรับเงินของตนเอง และผู้จ่ายเห็นบัญชีผู้รับพร้อมแนบสลิปยืนยันในหน้าจ่ายเงิน
+- ตรวจรายการที่อาจเบิกซ้ำจาก ผู้ขอ + ประเภท + จำนวนเงิน + วันที่
+- เก็บประวัติคำขอและสถานะย้อนหลัง
+- PWA ใช้บน Windows/macOS/Android/iPhone ผ่าน Browser
 
 ## วิธีเปิดบน Windows
-1. ต้องมี Node.js 18 ขึ้นไป
+1. ติดตั้ง Node.js 18 ขึ้นไป
 2. แตก ZIP
-3. เข้าโฟลเดอร์ที่เห็น `server.js`, `package.json`, `START_WEB.bat` อยู่ทันที
+3. เปิดโฟลเดอร์ที่มี `server.js` และ `START_WEB.bat`
 4. ดับเบิลคลิก `START_WEB.bat`
 5. เปิด `http://localhost:8080`
 
-มือถือ Android/iPhone ให้ต่อ Wi‑Fi เดียวกับคอม แล้วเปิด URL ที่ Terminal แสดง เช่น
-`http://192.168.1.110:8080`
+มือถือที่อยู่ Wi-Fi เดียวกับคอม ใช้ URL IP ที่ Terminal แสดง เช่น `http://192.168.1.110:8080`
 
 ## บัญชีทดสอบ
-User
-- เบอร์: `0800000001`
-- รหัสผ่าน: `12345678`
+รหัสผ่านทุกบัญชี: `12345678`
 
-## เชื่อม Discord Chat
+- เจ้าของสวน: `0800000000`
+- คนดูแลสวน: `0800000002`
+- คนดูแลคนงาน: `0800000003`
+- คนงานกรีดยาง: `0800000001`
 
-1. สร้าง Discord Bot และเชิญ Bot เข้า Server ที่ต้องการ
-2. เปิด Developer Mode ใน Discord แล้วคัดลอก Channel ID ของห้องแชท
-3. สร้างไฟล์ `.env` ที่โฟลเดอร์หลักจาก `.env.example` แล้วตั้งค่า:
+ผู้สมัครสมาชิกใหม่จะได้บทบาท `คนงานกรีดยาง` โดยอัตโนมัติ
 
-```env
-DISCORD_BOT_TOKEN=ใส่_Bot_Token_ของคุณ
-DISCORD_CHANNEL_ID=ใส่_Channel_ID_ของคุณ
+## การตั้ง Discord
+### 1) ส่ง RubberSync -> Discord
+กำหนด `DISCORD_WEBHOOK_URL`
+
+PowerShell:
+```powershell
+$env:DISCORD_WEBHOOK_URL="https://discord.com/api/webhooks/..."
+node server.js
 ```
 
-Bot ต้องมีสิทธิ์ `View Channel`, `Read Message History` และ `Send Messages` จึงจะแสดงประวัติและส่งข้อความจาก RubberSync ได้
+### 2) รับ Discord -> RubberSync
+Webhook ปกติรับข้อความจาก Discord กลับไม่ได้ จึงต้องใช้ Discord Bot ที่มีสิทธิ์ `View Channel` และ `Read Message History` แล้วกำหนด:
 
-Admin
-- เบอร์: `0800000000`
-- รหัสผ่าน: `12345678`
+```powershell
+$env:DISCORD_BOT_TOKEN="..."
+$env:DISCORD_CHANNEL_ID="..."
+node server.js
+```
+
+เมื่อเปิดหน้าสื่อสาร RubberSync จะดึงข้อความล่าสุดจาก Channel และบันทึกโดยใช้ Discord Message ID ป้องกันการซ้ำ
+
+## การตั้ง SMS สำหรับลืมรหัสผ่าน
+ระบบส่ง OTP ผ่าน Twilio เมื่อกำหนดค่าต่อไปนี้ก่อนเริ่มเซิร์ฟเวอร์:
+
+```powershell
+$env:TWILIO_ACCOUNT_SID="AC..."
+$env:TWILIO_AUTH_TOKEN="..."
+$env:TWILIO_FROM_NUMBER="+1..."
+node server.js
+```
+
+รหัส OTP หมดอายุใน 5 นาทีและยืนยันผิดได้ไม่เกิน 5 ครั้ง โหมดพัฒนาที่ไม่ใช่ `NODE_ENV=production` จะแสดงรหัสทดสอบบนหน้าจอ; Production จะไม่เริ่มส่งรหัสหากยังไม่ได้ตั้งค่า Twilio
 
 ## ข้อมูลที่บันทึก
-- `data/db.json` ฐานข้อมูลแบบ JSON สำหรับระบบนี้
-- `public/uploads/` รูปใบเสร็จและสลิปที่อัปโหลด
+- `data/db.json` เก็บผู้ใช้ คำขอ รอบขาย ข้อความ การแจ้งเตือน ประกาศ และรายการจ่ายเงิน
+- `public/uploads/` เก็บใบเสร็จและสลิป
 
-สำหรับขึ้นออนไลน์จริง แนะนำ deploy บน VPS/Render/Railway พร้อม HTTPS และย้ายฐานข้อมูลไป PostgreSQL/MySQL เมื่อมีผู้ใช้จำนวนมาก
+## หมายเหตุสำหรับ Production
+- ต้องเปลี่ยน `AUTH_SECRET`
+- ควรใช้ HTTPS
+- ควรย้ายฐานข้อมูลจาก JSON ไป PostgreSQL/MySQL เมื่อใช้งานหลายคนจริง
+- Discord Bot Token ต้องเก็บเป็น environment variable เท่านั้น ห้ามใส่ใน frontend หรือ commit ขึ้น Git

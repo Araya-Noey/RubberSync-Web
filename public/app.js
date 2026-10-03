@@ -1,202 +1,449 @@
-const $ = (s,root=document)=>root.querySelector(s);
-const $$ = (s,root=document)=>[...root.querySelectorAll(s)];
+const $ = (s, root = document) => root.querySelector(s);
+const $$ = (s, root = document) => [...root.querySelectorAll(s)];
 const app = $('#app');
+
 const state = {
   token: localStorage.getItem('rubbersync_token') || '',
   user: null,
   view: 'home',
-  viewHistory: [],
-  audience: 'all',
-  announcementDraft: { title:'', body:'' },
-  requestStep: 1,
-  requestDraft: { category:'ค่าน้ำมัน', amount:'', date:new Date().toISOString().slice(0,10), note:'', receiptDataUrl:'', receiptName:'' },
   settings: null,
   metrics: null,
   announcements: [],
   requests: [],
   payments: [],
-  discordMessages: [],
-  discordConfigured: false,
-  users: [],
+  saleRounds: [],
+  messages: [],
+  notifications: [],
+  receiptDataUrl: '',
+  receiptName: ''
 };
 
-const ESC = {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'};
-function h(v=''){ return String(v).replace(/[&<>"']/g,c=>ESC[c]); }
-function money(v){ return new Intl.NumberFormat('th-TH',{style:'currency',currency:'THB',minimumFractionDigits:2}).format(Number(v||0)); }
-function dt(v){ try{return new Intl.DateTimeFormat('th-TH',{dateStyle:'medium',timeStyle:'short'}).format(new Date(v));}catch{return v||'-';} }
-function dateOnly(v){ try{return new Intl.DateTimeFormat('th-TH',{dateStyle:'medium'}).format(new Date(v+'T00:00:00'));}catch{return v||'-';} }
-function statusText(s){ return ({pending:'รอตรวจสอบ',approved:'อนุมัติแล้ว',rejected:'ไม่อนุมัติ',paid:'จ่ายแล้ว'})[s]||s; }
-function toast(msg,type=''){ const el=document.createElement('div'); el.className=`toast ${type}`; el.textContent=msg; $('#toast-root').appendChild(el); setTimeout(()=>el.remove(),2800); }
-function modal(html){ const b=document.createElement('div'); b.className='modal-backdrop'; b.innerHTML=`<div class="modal">${html}</div>`; b.addEventListener('click',e=>{if(e.target===b)b.remove()}); document.body.appendChild(b); return b; }
+const ESC = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
+const ROLE_LABELS = {
+  owner: 'เจ้าของสวน',
+  garden_manager: 'คนดูแลสวน',
+  worker_supervisor: 'คนดูแลคนงาน',
+  worker: 'คนงานกรีดยาง'
+};
 
-async function api(url, opts={}){
-  const headers = {'Content-Type':'application/json', ...(opts.headers||{})};
-  if(state.token) headers.Authorization=`Bearer ${state.token}`;
-  const r = await fetch(url,{...opts,headers});
-  let data={}; try{data=await r.json()}catch{}
-  if(r.status===401 && url!='/api/auth/login'){ logout(false); throw new Error('กรุณาเข้าสู่ระบบใหม่'); }
-  if(!r.ok){
-    const map={invalid_credentials:'เบอร์โทรศัพท์หรือรหัสผ่านไม่ถูกต้อง',phone_exists:'เบอร์โทรศัพท์นี้ถูกใช้แล้ว',invalid_input:'ข้อมูลไม่ครบหรือรูปแบบไม่ถูกต้อง',forbidden:'ไม่มีสิทธิ์ใช้งาน',users_only:'ฟังก์ชันนี้สำหรับผู้ใช้ทั่วไป',request_not_approved:'รายการนี้ยังไม่ได้รับอนุมัติ',invalid_image:'ไฟล์รูปไม่ถูกต้อง',receipt_required:'กรุณาแนบรูปใบเสร็จ',image_too_large:'รูปใหญ่เกิน 5 MB',invalid_message:'กรุณากรอกข้อความ (ไม่เกิน 1,000 ตัวอักษร)',discord_not_configured:'ยังไม่ได้ตั้งค่า Discord Bot',discord_unavailable:'ไม่สามารถเชื่อมต่อ Discord ได้'};
-    throw new Error(map[data.error]||data.error||`เกิดข้อผิดพลาด ${r.status}`);
+function h(v = '') { return String(v).replace(/[&<>"']/g, c => ESC[c]); }
+function discordInviteHref(value = '') {
+  let raw = String(value || '').trim();
+  if (!raw) return '';
+  if (!/^https?:\/\//i.test(raw)) raw = `https://${raw}`;
+  try {
+    const url = new URL(raw);
+    return url.protocol === 'https:' && ['discord.gg', 'discord.com', 'www.discord.com', 'discordapp.com'].includes(url.hostname.toLowerCase()) ? url.href : '';
+  } catch { return ''; }
+}
+function money(v) { return new Intl.NumberFormat('th-TH', { style: 'currency', currency: 'THB', minimumFractionDigits: 2 }).format(Number(v || 0)); }
+function dt(v) { try { return new Intl.DateTimeFormat('th-TH', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(v)); } catch { return v || '-'; } }
+function dateOnly(v) { try { return new Intl.DateTimeFormat('th-TH', { dateStyle: 'medium' }).format(new Date(`${v}T00:00:00`)); } catch { return v || '-'; } }
+function statusText(s) { return ({ pending: 'รอตรวจสอบ', approved: 'อนุมัติแล้ว', rejected: 'ไม่อนุมัติ', paid: 'จ่ายแล้ว' })[s] || s; }
+function roleLabel(role) { return ROLE_LABELS[role] || role || '-'; }
+function todayLocal() { const d = new Date(); const y = d.getFullYear(); const m = String(d.getMonth() + 1).padStart(2, '0'); const day = String(d.getDate()).padStart(2, '0'); return `${y}-${m}-${day}`; }
+function canManageSales() { return ['owner', 'garden_manager'].includes(state.user?.role); }
+function canApprove() { return state.user?.role === 'owner'; }
+function canViewAllExpenses() { return ['owner', 'garden_manager'].includes(state.user?.role); }
+function canPay() { return ['owner', 'garden_manager'].includes(state.user?.role); }
+function canAnnounce() { return ['owner', 'garden_manager'].includes(state.user?.role); }
+function isWorker() { return state.user?.role === 'worker'; }
+
+function toast(msg, type = '') {
+  const el = document.createElement('div');
+  el.className = `toast ${type}`;
+  el.textContent = msg;
+  $('#toast-root').appendChild(el);
+  setTimeout(() => el.remove(), 3200);
+}
+function modal(html) {
+  const b = document.createElement('div');
+  b.className = 'modal-backdrop';
+  b.innerHTML = `<div class="modal">${html}</div>`;
+  b.addEventListener('click', e => { if (e.target === b) b.remove(); });
+  document.body.appendChild(b);
+  return b;
+}
+
+async function api(url, opts = {}) {
+  const headers = { 'Content-Type': 'application/json', ...(opts.headers || {}) };
+  if (state.token) headers.Authorization = `Bearer ${state.token}`;
+  const r = await fetch(url, { ...opts, headers });
+  let data = {}; try { data = await r.json(); } catch {}
+  if (r.status === 401 && url !== '/api/auth/login') {
+    logout(false); throw new Error('กรุณาเข้าสู่ระบบใหม่');
+  }
+  if (!r.ok) {
+    const map = {
+      invalid_credentials: 'เบอร์โทรศัพท์หรือรหัสผ่านไม่ถูกต้อง',
+      phone_exists: 'เบอร์โทรศัพท์นี้ถูกใช้แล้ว',
+      phone_not_found: 'ไม่พบบัญชีที่ใช้เบอร์โทรศัพท์นี้',
+      invalid_or_expired_otp: 'รหัสยืนยันไม่ถูกต้องหรือหมดอายุ กรุณาขอรหัสใหม่',
+      otp_rate_limited: 'กรุณารอ 1 นาทีก่อนขอรหัสใหม่',
+      sms_not_configured: 'ระบบยังไม่ได้ตั้งค่าการส่ง SMS',
+      sms_delivery_failed: 'ส่ง SMS ไม่สำเร็จ กรุณาลองใหม่อีกครั้ง',
+      invalid_bank_account: 'กรุณากรอกชื่อธนาคาร ชื่อบัญชี และเลขบัญชีให้ถูกต้อง',
+      invalid_discord_url: 'กรุณาใส่ลิงก์ Discord เช่น discord.gg/รหัสเชิญ',
+      invalid_input: 'ข้อมูลไม่ครบหรือรูปแบบไม่ถูกต้อง',
+      forbidden: 'บัญชีนี้ไม่มีสิทธิ์ใช้งานฟังก์ชันนี้',
+      request_not_approved: 'รายการนี้ยังไม่ได้รับอนุมัติ',
+      invalid_image: 'ไฟล์รูปไม่ถูกต้อง รองรับ PNG/JPG/WebP',
+      image_too_large: 'รูปมีขนาดเกิน 5 MB',
+      sale_before_collection: 'วันขายยางต้องไม่มาก่อนวันเก็บยาง'
+    };
+    throw new Error(map[data.error] || data.error || `เกิดข้อผิดพลาด ${r.status}`);
   }
   return data;
 }
 
-function setToken(token,user){ state.token=token; state.user=user; localStorage.setItem('rubbersync_token',token); }
-function logout(render=true){ state.token=''; state.user=null; localStorage.removeItem('rubbersync_token'); if(render) renderLogin(); }
+function setToken(token, user) {
+  state.token = token; state.user = user;
+  localStorage.setItem('rubbersync_token', token);
+}
+function logout(render = true) {
+  state.token = ''; state.user = null;
+  localStorage.removeItem('rubbersync_token');
+  if (render) renderLogin();
+}
 
-function brand(){ return `<div class="brand"><img class="brand-logo" src="/assets/rubbersync-logo-user.png" alt="RubberSync"><h1>RubberSync</h1><p>ระบบจัดการสวนยางพาราที่ปลอดภัย</p></div>`; }
-function renderLogin(){
-  app.innerHTML=`<main class="auth-page"><div class="auth-wrap">${brand()}<section class="card auth-card">
+function brand() {
+  return `<div class="brand"><img class="brand-logo" src="/assets/rubbersync-logo-user.png" alt="RubberSync"><h1>RubberSync</h1><p>ระบบบริหารจัดการสวนยาง</p></div>`;
+}
+function renderLogin() {
+  app.innerHTML = `<main class="auth-page"><div class="auth-wrap">${brand()}<section class="card auth-card">
     <form id="login-form">
-      <div class="field"><label>ชื่อผู้ใช้หรือเบอร์โทรศัพท์</label><input class="input" name="phone" type="tel" inputmode="numeric" autocomplete="username" maxlength="10" minlength="10" pattern="[0-9]{10}" title="กรุณากรอกตัวเลข 10 หลัก" placeholder="กรอกเบอร์โทรศัพท์" required></div>
-      <div class="field"><div class="spread"><label>รหัสผ่าน</label><button class="text-link" type="button" data-action="forgot">ลืมรหัสผ่าน?</button></div><div class="password-control"><input class="input" name="password" type="password" autocomplete="current-password" placeholder="กรุณากรอกรหัสผ่าน" required><button class="password-toggle" type="button" data-password-toggle aria-label="แสดงรหัสผ่าน" title="แสดงรหัสผ่าน"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/></svg></button></div></div>
-      <div class="test-account-actions"><button class="btn btn-outline" type="button" data-test-account="user">User</button><button class="btn btn-outline" type="button" data-test-account="admin">Addmin</button></div>
-      <label class="remember"><input type="checkbox" name="remember" checked> จดจำฉันในอุปกรณ์นี้</label>
-      <div class="auth-actions"><button class="btn btn-primary btn-block" type="submit">เข้าสู่ระบบ</button><button class="btn btn-outline btn-block" type="button" data-action="register">สมัครสมาชิกใหม่</button></div>
+      <div class="field"><label>เบอร์โทรศัพท์</label><input class="input" name="phone" inputmode="tel" autocomplete="username" placeholder="08xxxxxxxx" required></div>
+      <div class="field"><div class="spread"><label>รหัสผ่าน</label><button class="text-link" type="button" data-action="forgot">ลืมรหัสผ่าน?</button></div><div class="password-wrap"><input id="login-password" class="input" name="password" type="password" autocomplete="current-password" placeholder="กรุณากรอกรหัสผ่าน" required><button class="password-toggle" type="button" data-action="toggle-password" data-target="login-password" aria-label="แสดงรหัสผ่าน" aria-pressed="false">แสดง</button></div></div>
+      <div class="auth-actions"><button class="btn btn-primary btn-block" type="submit">เข้าสู่ระบบ</button><button class="btn btn-outline btn-block" type="button" data-action="register">สมัครสมาชิกคนงาน</button></div>
     </form>
+    <div class="demo-accounts"><strong>บัญชีทดสอบ (รหัส 12345678)</strong><br>เจ้าของสวน 0800000000<br>คนดูแลสวน 0800000002<br>คนดูแลคนงาน 0800000003<br>คนงาน 0800000001</div>
   </section></div></main>`;
   $('#login-form').addEventListener('submit', onLogin);
 }
-async function onLogin(e){
-  e.preventDefault(); const f=new FormData(e.currentTarget);
-  try{ const d=await api('/api/auth/login',{method:'POST',body:JSON.stringify({phone:f.get('phone'),password:f.get('password')})}); setToken(d.token,d.user); state.view='home'; await loadCore(); render(); }
-  catch(err){toast(err.message,'error')}
+async function onLogin(e) {
+  e.preventDefault();
+  const f = new FormData(e.currentTarget);
+  try {
+    const d = await api('/api/auth/login', { method: 'POST', body: JSON.stringify({ phone: f.get('phone'), password: f.get('password') }) });
+    setToken(d.token, d.user); state.view = 'home'; await loadCore(); render();
+  } catch (err) { toast(err.message, 'error'); }
 }
-function renderRegister(){
-  app.innerHTML=`<main class="auth-page"><div class="auth-wrap"><section class="card auth-card">
-    <div class="spread" style="margin-bottom:18px"><button class="text-link" data-action="login">← ย้อนกลับ</button><strong style="color:var(--primary)">RubberSync</strong></div>
-    <div style="text-align:center;margin-bottom:20px"><img class="brand-logo" src="/assets/rubbersync-logo-user.png" alt=""><h2 style="color:var(--primary);margin:8px 0">สร้างบัญชีผู้ใช้</h2><p class="muted">เริ่มต้นการทำงานสวนยางพาราของคุณอย่างมีประสิทธิภาพ</p></div>
-    <form id="register-form"><div class="field"><label>ชื่อ - นามสกุล</label><input class="input" name="fullName" placeholder="กรอกชื่อและนามสกุลของคุณ" required></div>
-    <div class="field"><label>เบอร์โทรศัพท์</label><input class="input" name="phone" type="tel" inputmode="numeric" maxlength="10" minlength="10" pattern="[0-9]{10}" title="กรุณากรอกตัวเลข 10 หลัก" placeholder="08xxxxxxxx" required></div>
-    <div class="field"><label>รหัสผ่าน</label><div class="password-control"><input class="input" name="password" type="password" minlength="8" placeholder="อย่างน้อย 8 ตัวอักษร" required><button class="password-toggle" type="button" data-password-toggle aria-label="แสดงรหัสผ่าน" title="แสดงรหัสผ่าน"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/></svg></button></div><div class="hint">รหัสผ่านต้องมีความยาวอย่างน้อย 8 ตัวอักษร</div></div>
-    <button class="btn btn-primary btn-block" type="submit">เสร็จสิ้น</button></form>
-    <div style="text-align:center;margin-top:18px">มีบัญชีผู้ใช้แล้ว? <button class="text-link" data-action="login">เข้าสู่ระบบ</button></div>
+function renderRegister() {
+  app.innerHTML = `<main class="auth-page"><div class="auth-wrap"><section class="card auth-card">
+    <div class="spread" style="margin-bottom:18px"><button class="text-link" data-action="login">← ย้อนกลับ</button><strong>RubberSync</strong></div>
+    <h2 style="text-align:center;color:var(--primary)">สมัครบัญชีคนงานกรีดยาง</h2>
+    <form id="register-form">
+      <div class="field"><label>ชื่อ - นามสกุล</label><input class="input" name="fullName" required></div>
+      <div class="field"><label>เบอร์โทรศัพท์</label><input class="input" name="phone" inputmode="tel" placeholder="08xxxxxxxx" required></div>
+      <div class="field"><label>รหัสผ่าน</label><input class="input" name="password" type="password" minlength="8" required><div class="hint">อย่างน้อย 8 ตัวอักษร</div></div>
+      <button class="btn btn-primary btn-block" type="submit">สมัครสมาชิก</button>
+    </form>
   </section></div></main>`;
-  $('#register-form').addEventListener('submit', async e=>{e.preventDefault();const f=new FormData(e.currentTarget);try{const d=await api('/api/auth/register',{method:'POST',body:JSON.stringify({fullName:f.get('fullName'),phone:f.get('phone'),password:f.get('password')})});setToken(d.token,d.user);await loadCore();state.view='home';render();toast('สมัครสมาชิกสำเร็จ')}catch(err){toast(err.message,'error')}});
+  $('#register-form').addEventListener('submit', async e => {
+    e.preventDefault(); const f = new FormData(e.currentTarget);
+    try {
+      const d = await api('/api/auth/register', { method: 'POST', body: JSON.stringify({ fullName: f.get('fullName'), phone: f.get('phone'), password: f.get('password') }) });
+      setToken(d.token, d.user); await loadCore(); state.view = 'home'; render(); toast('สมัครสมาชิกสำเร็จ');
+    } catch (err) { toast(err.message, 'error'); }
+  });
+}
+let activeForgotPhone = '';
+function renderForgotPassword(stage = 'phone', phone = '', devCode = '') {
+  activeForgotPhone = phone;
+  const phoneStep = stage === 'phone';
+  app.innerHTML = `<main class="auth-page"><div class="auth-wrap"><section class="card auth-card">
+    <div class="spread" style="margin-bottom:18px"><button class="text-link" data-action="login">← กลับเข้าสู่ระบบ</button><strong>RubberSync</strong></div>
+    <h2 style="text-align:center;color:var(--primary)">ลืมรหัสผ่าน</h2>
+    <p class="meta" style="text-align:center;margin-bottom:22px">${phoneStep ? 'ยืนยันเบอร์โทรศัพท์เพื่อเปลี่ยนรหัสผ่าน' : `กรอกรหัสยืนยันที่ส่งไปยัง ${h(phone)}`}</p>
+    ${phoneStep ? `<form id="forgot-phone-form"><div class="field"><label>เบอร์โทรศัพท์ที่ใช้สมัคร</label><input class="input" name="phone" inputmode="tel" autocomplete="tel" placeholder="08xxxxxxxx" pattern="0[0-9]{9}" required></div><button class="btn btn-primary btn-block" type="submit">ส่งรหัสยืนยัน</button></form>` : `<form id="forgot-reset-form"><div class="field"><label>รหัสยืนยัน 6 หลัก</label><input class="input" name="code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6" required></div><div class="field"><label>รหัสผ่านใหม่</label><div class="password-wrap"><input id="reset-password" class="input" name="password" type="password" minlength="8" autocomplete="new-password" required><button class="password-toggle" type="button" data-action="toggle-password" data-target="reset-password" aria-label="แสดงรหัสผ่าน" aria-pressed="false">แสดง</button></div><div class="hint">อย่างน้อย 8 ตัวอักษร</div></div><div class="field"><label>ยืนยันรหัสผ่านใหม่</label><div class="password-wrap"><input id="reset-confirm-password" class="input" name="confirmPassword" type="password" minlength="8" autocomplete="new-password" required><button class="password-toggle" type="button" data-action="toggle-password" data-target="reset-confirm-password" aria-label="แสดงรหัสผ่าน" aria-pressed="false">แสดง</button></div></div><button class="btn btn-primary btn-block" type="submit">เปลี่ยนรหัสผ่าน</button><button class="btn btn-outline btn-block" type="button" data-action="forgot-resend">ส่งรหัสใหม่ไปที่เบอร์เดิม</button><button class="text-link" style="display:block;margin:12px auto 0" type="button" data-action="forgot-restart">เปลี่ยนเบอร์โทรศัพท์</button><div id="dev-otp" class="hint" style="text-align:center;margin-top:12px">${devCode ? `รหัสทดสอบ (โหมดพัฒนา): <strong>${h(devCode)}</strong>` : ''}</div></form>`}
+  </section></div></main>`;
+  if (phoneStep) $('#forgot-phone-form').addEventListener('submit', async e => {
+    e.preventDefault(); const phoneValue = String(new FormData(e.currentTarget).get('phone') || '').trim();
+    try { const result = await api('/api/auth/password-reset/request', { method: 'POST', body: JSON.stringify({ phone: phoneValue }) }); renderForgotPassword('reset', phoneValue, result.developmentCode || ''); toast('ส่งรหัสยืนยันแล้ว'); }
+    catch (err) { toast(err.message, 'error'); }
+  });
+  else $('#forgot-reset-form').addEventListener('submit', async e => {
+    e.preventDefault(); const f = new FormData(e.currentTarget); const password = String(f.get('password') || '');
+    if (password !== f.get('confirmPassword')) return toast('รหัสผ่านทั้งสองช่องไม่ตรงกัน', 'error');
+    try { await api('/api/auth/password-reset/confirm', { method: 'POST', body: JSON.stringify({ phone, code: f.get('code'), password }) }); renderLogin(); toast('เปลี่ยนรหัสผ่านสำเร็จ เข้าสู่ระบบด้วยรหัสผ่านใหม่'); }
+    catch (err) { toast(err.message, 'error'); }
+  });
 }
 
-function shell(content,active='home'){
-  const u=state.user;
-  const backButton = state.view !== 'home'
-    ? '<button class="text-link" data-action="go-back">← ย้อนกลับ</button>'
-    : '';
-
+function shell(content, active = 'home') {
+  const u = state.user;
+  const unread = state.metrics?.notificationCount || 0;
   return `<div class="page app-shell">
-    <header class="topbar"><div class="topbar-inner"><div class="profile-mini"><div class="avatar">${h((u?.fullName||'R').trim()[0]||'R')}</div><div><div class="topbar-title">${h(u?.fullName||'RubberSync')}</div><div class="meta">${u?.role==='admin'?'เจ้าของสวน / ผู้ดูแล':'คนงานสวนยาง'}</div></div></div>${backButton}</div></header>
+    <header class="topbar"><div class="topbar-inner"><div class="profile-mini"><div class="avatar">${h((u?.fullName || 'R').trim()[0] || 'R')}</div><div><div class="topbar-title">${h(u?.fullName || 'RubberSync')}</div><div class="meta">${h(roleLabel(u?.role))}</div></div></div><button class="text-link" data-action="refresh">รีเฟรช</button></div></header>
     <main class="content">${content}</main>
     <nav class="bottomnav"><div class="bottomnav-inner">
-      <button class="nav-btn ${active==='home'?'active':''}" data-view="home"><span class="nav-icon">⌂</span><span>หน้าหลัก</span></button>
-      <button class="nav-btn ${active==='community'?'active':''}" data-view="community"><span class="nav-icon">☏</span><span>ชุมชน</span></button>
-      <button class="nav-btn ${active==='settings'?'active':''}" data-view="settings"><span class="nav-icon">⚙</span><span>ตั้งค่า</span></button>
+      <button class="nav-btn ${active === 'home' ? 'active' : ''}" data-view="home"><span class="nav-icon">⌂</span><span>หน้าหลัก</span></button>
+      <button class="nav-btn ${active === 'communication' ? 'active' : ''}" data-view="communication"><span class="nav-icon">✉</span><span>สื่อสาร</span></button>
+      <button class="nav-btn ${active === 'notifications' ? 'active' : ''}" data-view="notifications"><span class="nav-icon">🔔</span><span>แจ้งเตือน${unread ? ` (${unread})` : ''}</span></button>
+      <button class="nav-btn ${active === 'settings' ? 'active' : ''}" data-view="settings"><span class="nav-icon">⚙</span><span>ตั้งค่า</span></button>
     </div></nav>
   </div>`;
 }
-function hero(title,sub){ return `<section class="hero"><h2>${h(title)}</h2><p>${h(sub)}</p></section>`; }
-function actionCard(icon,title,sub,view,accent){ return `<button class="action-card" data-view="${view}" style="--accent:${accent}"><div><div class="action-icon">${icon}</div><h3>${h(title)}</h3><p>${h(sub)}</p></div></button>`; }
-
-async function loadCore(){
-  const [d,s,a,r,p,u]=await Promise.all([api('/api/dashboard'),api('/api/settings'),api('/api/announcements'),api('/api/requests'),api('/api/payments'),api('/api/users')]);
-  state.metrics=d;state.settings=s.settings;state.announcements=a.announcements;state.requests=r.requests;state.payments=p.payments;state.users=u.users;
-  try { const discord=await api('/api/discord/messages'); state.discordMessages=discord.messages||[]; state.discordConfigured=Boolean(discord.configured); } catch { state.discordMessages=[]; state.discordConfigured=false; }
-}
-function metricCards(){const m=state.metrics||{counts:{},total:0,totalAmount:0};return `<div class="summary-grid"><div class="card metric"><div class="value">${m.counts?.pending||0}</div><div class="label">รอตรวจสอบ</div></div><div class="card metric"><div class="value">${m.counts?.approved||0}</div><div class="label">อนุมัติแล้ว</div></div><div class="card metric"><div class="value">${m.counts?.paid||0}</div><div class="label">จ่ายแล้ว</div></div><div class="card metric"><div class="value">${h(money(m.totalAmount||0))}</div><div class="label">ยอดอนุมัติ/จ่าย</div></div></div>`}
-function renderHome(){
-  const admin=state.user.role==='admin';
-  const cards=admin?
-    `${actionCard('✓','ตรวจสอบการร้องขอ','ตรวจสอบและอนุมัติรายการเบิกจ่าย','admin-requests','#3f6653')}${actionCard('☏','ห้องสนทนา','พูดคุยกับทีมงานในสวน','community','#4c6fff')}${actionCard('📣','สร้างประกาศ','กระจายข่าวสารให้ทีมงานในสวน','announcement','#7f5539')}${actionCard('฿','โอนและส่งสลิป','แนบหลักฐานเพื่อยืนยันการทำรายการ','payroll','#012d1d')}`:
-    `${actionCard('🧾','สร้างคำขอเบิกจ่าย','สร้างคำขอเบิกจ่ายพร้อมหลักฐานใบเสร็จ','request','#3f6653')}${actionCard('☏','ห้องสนทนา','พูดคุยกับทีมงานในสวน','community','#4c6fff')}${actionCard('◷','ประวัติคำขอ','ติดตามสถานะรายการย้อนหลัง','history','#7f5539')}`;
-  app.innerHTML=shell(`${hero('เลือกฟังก์ชันการใช้งาน','จัดการสวนยางพาราของคุณได้อย่างมีประสิทธิภาพ')}${metricCards()}<div class="action-grid ${admin?'admin-grid':''}">${cards}</div>`,'home');
+function hero(title, sub) { return `<section class="hero"><h2>${h(title)}</h2><p>${h(sub)}</p></section>`; }
+function actionCard(icon, title, sub, view, accent = '#3f6653') {
+  return `<button class="action-card" data-view="${h(view)}" style="--accent:${accent}"><div><div class="action-icon">${icon}</div><h3>${h(title)}</h3><p>${h(sub)}</p></div></button>`;
 }
 
-function renderRequest(){
-  const d=state.requestDraft,s=state.requestStep;
-  const steps=`<div class="steps"><div class="step ${s>1?'done':s===1?'active':''}"><div class="step-dot">${s>1?'✓':'1'}</div>เลือกประเภท</div><div class="connector ${s>1?'done':''}"></div><div class="step ${s>2?'done':s===2?'active':''}"><div class="step-dot">${s>2?'✓':'2'}</div>รายละเอียด</div><div class="connector ${s>2?'done':''}"></div><div class="step ${s===3?'active':''}"><div class="step-dot">3</div>ยืนยัน</div></div>`;
-  let body='';
-  if(s===1){ body=`${hero('เลือกประเภทค่าใช้จ่าย','เลือกหมวดหมู่ที่ต้องการขอเบิก')}<section class="card form-card"><div class="audience-grid">${['ค่าอุปกรณ์','ค่าน้ำมัน','ค่าน้ำกรด','อื่นๆ'].map(x=>`<button class="audience-btn ${d.category===x?'active':''}" data-category="${x}">${x}</button>`).join('')}</div></section><div style="margin-top:20px"><button class="btn btn-primary btn-block" data-action="request-next">ถัดไป →</button></div>`; }
-  if(s===2){ body=`${hero('กรอกรายละเอียด','โปรดระบุจำนวน ข้อมูล และใบเสร็จให้ครบถ้วน')}<section class="card form-card"><form id="request-detail-form"><div class="field"><label>หัวข้อ *</label><select class="select" name="category">${['ค่าอุปกรณ์','ค่าน้ำมัน','ค่าน้ำกรด','อื่นๆ'].map(x=>`<option ${d.category===x?'selected':''}>${x}</option>`).join('')}</select></div><div class="field"><label>จำนวนเงิน *</label><input class="input" name="amount" type="number" min="1" step="0.01" value="${h(d.amount)}" placeholder="0.00" required><div class="hint">ระบุจำนวนเงินที่ต้องการบันทึก</div></div><div class="field"><label>วันที่ *</label><input class="input" name="date" type="date" value="${h(d.date)}" required></div><div class="field"><label>รูปใบเสร็จ *</label><div class="file-box"><input id="receipt-file" type="file" accept="image/png,image/jpeg,image/webp" ${d.receiptDataUrl?'':'required'}><img id="receipt-preview" class="file-preview ${d.receiptDataUrl?'':'hidden'}" ${d.receiptDataUrl?`src="${h(d.receiptDataUrl)}"`:''} alt="ตัวอย่างใบเสร็จ"></div><div class="hint">PNG/JPG/WebP ไม่เกิน 5 MB</div></div><div class="field"><label>หมายเหตุ</label><textarea class="textarea" name="note" placeholder="ระบุรายละเอียดเพิ่มเติม หรือหมายเหตุ (ถ้ามี)...">${h(d.note)}</textarea></div><button class="btn btn-primary btn-block" type="submit">ถัดไป →</button><button class="btn btn-outline btn-block" style="margin-top:10px" type="button" data-action="request-back">← ย้อนกลับ</button></form></section>`; }
-  if(s===3){ body=`${hero('ยืนยันคำขอ','ตรวจสอบข้อมูลก่อนส่งคำขอ')}<section class="card form-card"><h3>สรุปรายการคำร้อง</h3><div class="setting-row"><span>หมวดหมู่</span><strong>${h(d.category)}</strong></div><div class="setting-row"><span>จำนวนเงิน</span><strong>${h(money(d.amount))}</strong></div><div class="setting-row"><span>วันที่</span><strong>${h(dateOnly(d.date))}</strong></div><div class="setting-row"><span>ใบเสร็จ</span><strong>${h(d.receiptName||'ยังไม่ได้แนบ')}</strong></div><div class="setting-row"><span>หมายเหตุ</span><strong>${h(d.note||'-')}</strong></div><button class="btn btn-primary btn-block" style="margin-top:18px" data-action="request-submit">ส่งคำขอ</button><button class="btn btn-outline btn-block" style="margin-top:10px" data-action="request-back">← ย้อนกลับ</button></section>`; }
-  app.innerHTML=shell(`${steps}${body}`,'home');
-  if(s===2) { $('#receipt-file').addEventListener('change',e=>{const file=e.target.files[0];if(!file)return;if(file.size>5*1024*1024){toast('รูปใหญ่เกิน 5 MB','error');e.target.value='';return;}const reader=new FileReader();reader.onload=()=>{state.requestDraft.receiptDataUrl=reader.result;state.requestDraft.receiptName=file.name;const im=$('#receipt-preview');im.src=reader.result;im.classList.remove('hidden')};reader.readAsDataURL(file)}); $('#request-detail-form').addEventListener('submit',e=>{e.preventDefault();const f=new FormData(e.currentTarget);if(!state.requestDraft.receiptDataUrl)return toast('กรุณาแนบรูปใบเสร็จ','error');state.requestDraft={...state.requestDraft,category:f.get('category'),amount:f.get('amount'),date:f.get('date'),note:f.get('note')};state.requestStep=3;renderRequest();}); }
+async function loadCore() {
+  const [d, s, a, r, p, sales, notes, me] = await Promise.all([
+    api('/api/dashboard'), api('/api/settings'), api('/api/announcements'), api('/api/requests'), api('/api/payments'), api('/api/sale-rounds'), api('/api/notifications'), api('/api/me')
+  ]);
+  state.user = me.user;
+  state.metrics = d; state.settings = s.settings; state.announcements = a.announcements;
+  state.requests = r.requests; state.payments = p.payments; state.saleRounds = sales.saleRounds; state.notifications = notes.notifications;
 }
-async function submitRequest(){ try{const d=state.requestDraft;const r=await api('/api/requests',{method:'POST',body:JSON.stringify({category:d.category,amount:Number(d.amount),date:d.date,note:d.note,receiptDataUrl:d.receiptDataUrl})});state.requestStep=1;state.requestDraft={category:'ค่าน้ำมัน',amount:'',date:new Date().toISOString().slice(0,10),note:'',receiptDataUrl:'',receiptName:''};await loadCore();modal(`<div style="text-align:center"><div style="font-size:54px;color:var(--success)">✓</div><h3>ส่งคำร้องสำเร็จ</h3><p>รหัสอ้างอิง <strong>${h(r.request.ref)}</strong></p><p>${h(r.request.category)} · ${h(money(r.request.amount))}</p><div class="modal-actions"><button class="btn btn-primary" data-view="home">ไปที่หน้าหลัก</button><button class="btn btn-outline" data-view="history">ดูสถานะ</button></div></div>`); }catch(e){toast(e.message,'error')} }
-
-function requestCard(r,admin=false){ return `<article class="card request-item"><div class="request-head"><div><span class="status ${r.status}">${statusText(r.status)}</span><h4>${h(r.category)}</h4><div class="meta">${h(r.ref)} · ${h(dateOnly(r.date))}</div><div class="meta">${h(r.user?.fullName||'')}</div>${r.reviewedAt?`<div class="meta">ตรวจสอบเมื่อ ${h(dt(r.reviewedAt))}</div>`:''}</div><div class="amount">${h(money(r.amount))}</div></div>${r.note?`<p class="muted">${h(r.note)}</p>`:''}${r.receiptUrl?`<div style="margin-top:12px"><button class="text-link" data-view-receipt="${h(r.receiptUrl)}">🧾 ดูใบเสร็จที่แนบ</button></div>`:''}${admin&&r.status==='pending'?`<div class="request-actions"><button class="btn btn-danger" data-reject="${r.id}">ปฏิเสธ</button><button class="btn btn-primary" data-review="${r.id}">ตรวจสอบ</button></div>`:''}${!admin&&r.payment?.slipUrl?`<div style="margin-top:12px"><a href="${h(r.payment.slipUrl)}" target="_blank" class="text-link">ดูหลักฐานการจ่ายเงิน</a></div>`:''}</article>`; }
-function renderHistory(){ const list=state.requests; app.innerHTML=shell(`${hero('ประวัติคำขอ','ติดตามสถานะคำขอเบิกจ่ายทั้งหมด')}<div class="section-title"><h3>รายการของฉัน</h3><button class="btn btn-primary" data-view="request">+ สร้างคำขอ</button></div><div class="list">${list.length?list.map(r=>requestCard(r)).join(''):`<div class="card empty">ยังไม่มีรายการ</div>`}</div>`,'home'); }
-function renderAdminRequests(){ const pending=state.requests.filter(r=>r.status==='pending'), past=state.requests.filter(r=>r.status!=='pending'); app.innerHTML=shell(`${hero('รายการขอเบิกเงิน','ตรวจสอบและอนุมัติคำขอจากคนงาน')}<div class="section-title"><h3>คำขอใหม่ (รอตรวจสอบ)</h3><span class="status pending">${pending.length} รายการ</span></div><div class="list">${pending.length?pending.map(r=>requestCard(r,true)).join(''):`<div class="card empty">ไม่มีคำขอรอตรวจสอบ</div>`}</div><section class="card history-link-card"><div><h3>ประวัติการตรวจสอบ</h3><p class="muted">ดูคำขอที่อนุมัติ ไม่อนุมัติ และจ่ายเงินแล้ว</p></div><button class="btn btn-outline" data-view="admin-history">ดูย้อนหลัง (${past.length})</button></section>`,'home'); }
-function renderAdminHistory(){ const past=state.requests.filter(r=>['approved','rejected','paid'].includes(r.status)).slice().sort((a,b)=>b.date.localeCompare(a.date)||b.createdAt.localeCompare(a.createdAt)); const approved=past.filter(r=>r.status==='approved'||r.status==='paid').length, rejected=past.filter(r=>r.status==='rejected').length; app.innerHTML=shell(`${hero('ประวัติการตรวจสอบคำขอ','เรียงตามวันที่ในรายการใหม่ล่าสุดก่อน พร้อมใบเสร็จที่เคยส่ง')}<div class="history-summary"><span class="status approved">อนุมัติ/จ่ายแล้ว ${approved}</span><span class="status rejected">ไม่อนุมัติ ${rejected}</span></div><div class="section-title" style="margin-top:20px"><h3>รายการย้อนหลัง</h3><button class="btn btn-outline" data-view="admin-requests">← กลับไปตรวจสอบคำขอ</button></div><div class="list">${past.length?past.map(r=>requestCard(r,false)).join(''):`<div class="card empty">ยังไม่มีประวัติการตรวจสอบ</div>`}</div>`,'home'); }
-function openReceipt(url){ modal(`<div class="receipt-modal-head"><h3>ใบเสร็จที่แนบ</h3><button class="text-link" data-action="close-modal">✕ ปิด</button></div><img class="receipt-review" src="${h(url)}" alt="ใบเสร็จที่แนบ"><button class="btn btn-outline btn-block" style="margin-top:16px" data-action="close-modal">← กลับไปหน้าเดิม</button>`); }
-function openReview(id){ const r=state.requests.find(x=>x.id===id); if(!r)return; const m=modal(`<h3>ตรวจสอบใบเสร็จและรายการเบิก</h3><div class="meta">รหัสอ้างอิง: ${h(r.ref)}</div><div class="setting-row"><span>ผู้ขอเบิก</span><strong>${h(r.user?.fullName||'-')}</strong></div><div class="setting-row"><span>หมวดหมู่</span><strong>${h(r.category)}</strong></div><div class="setting-row"><span>รายละเอียด</span><strong>${h(r.note||'-')}</strong></div><div class="setting-row"><span>ยอดเงินขอเบิก</span><strong>${h(money(r.amount))}</strong></div>${r.receiptUrl?`<button class="btn btn-outline btn-block" style="margin-top:16px" data-view-receipt="${h(r.receiptUrl)}">🧾 เปิดดูใบเสร็จ</button>`:`<p class="muted">รายการเก่านี้ยังไม่มีใบเสร็จแนบ</p>`}<div class="modal-actions"><button class="btn btn-danger" data-reject="${r.id}">ไม่อนุมัติ</button><button class="btn btn-success" data-approve="${r.id}">อนุมัติ</button></div>`); }
-async function updateStatus(id,status){ try{await api(`/api/requests/${id}/status`,{method:'PATCH',body:JSON.stringify({status})}); document.querySelector('.modal-backdrop')?.remove(); await loadCore(); renderAdminRequests(); toast(status==='approved'?'อนุมัติสำเร็จ':'ปฏิเสธรายการแล้ว');}catch(e){toast(e.message,'error')} }
-
-function renderAnnouncement(){
-  const d=state.announcementDraft;
-  app.innerHTML=shell(`${hero('สร้างประกาศใหม่','ส่งข้อความแจ้งเตือนถึงทีมงานผ่านระบบ')}<section class="card form-card"><h3>♟ กลุ่มเป้าหมาย</h3><div class="audience-grid">${[['all','ทุกคน'],['workers','เฉพาะคนงานกรีดยาง'],['admin','เฉพาะผู้ดูแล/หัวหน้าคนงาน']].map(([v,t])=>`<button class="audience-btn ${state.audience===v?'active':''}" data-audience="${v}">${t}</button>`).join('')}</div></section><section class="card form-card" style="margin-top:20px"><h3>▣ เนื้อหาประกาศ</h3><form id="announce-form"><div class="field"><label>หัวข้อประกาศ *</label><input class="input" name="title" value="${h(d.title)}" placeholder="กรอกข้อความ" required></div><div class="field"><label>รายละเอียด *</label><textarea class="textarea" name="body" placeholder="ระบุรายละเอียดที่ต้องการแจ้งให้ทราบ..." required>${h(d.body)}</textarea></div><button class="btn btn-primary btn-block" type="submit">เผยแพร่ประกาศ</button><button class="btn btn-brown btn-block" style="margin-top:12px" type="button" data-view="home">ยกเลิก</button></form></section>`,'home');
-  $('#announce-form').addEventListener('submit',async e=>{e.preventDefault();const f=new FormData(e.currentTarget);try{await api('/api/announcements',{method:'POST',body:JSON.stringify({title:f.get('title'),body:f.get('body'),audience:state.audience})});state.announcementDraft={title:'',body:''};await loadCore();toast('สร้างประกาศสำเร็จ');state.view='community';renderCommunity();}catch(err){toast(err.message,'error')}});
+function metricCards() {
+  const m = state.metrics || { counts: {} };
+  return `<div class="summary-grid">
+    <div class="card metric"><div class="value">${m.counts?.pending || 0}</div><div class="label">รอตรวจสอบ</div></div>
+    <div class="card metric"><div class="value">${m.saleRounds || 0}</div><div class="label">รอบขายยาง</div></div>
+    <div class="card metric"><div class="value">${m.notificationCount || 0}</div><div class="label">แจ้งเตือนใหม่</div></div>
+    <div class="card metric"><div class="value">${h(money(m.totalAmount || 0))}</div><div class="label">ยอดอนุมัติ/จ่าย</div></div>
+  </div>`;
 }
-
-function renderCommunity(){ const anns=state.announcements, messages=state.discordMessages; app.innerHTML=shell(`${hero('Discord ใน RubberSync','แชทและประวัติข้อความจากช่อง Discord ที่เชื่อมต่อ')}${state.discordConfigured?`<section class="card chat-card"><div class="chat-head"><div><h3>💬 Discord Channel</h3><div class="muted">แสดงประวัติ 50 ข้อความล่าสุด</div></div><button class="text-link" data-action="refresh">รีเฟรช</button></div><div class="chat-messages">${messages.length?messages.map(m=>`<article class="chat-message"><div class="chat-author">${h(m.author?.name||'Discord user')} <span>${h(dt(m.createdAt))}</span></div><div>${h(m.text||'(ข้อความแนบไฟล์)')}</div>${m.attachments?.length?`<div class="chat-attachments">${m.attachments.map(a=>`<a href="${h(a.url)}" target="_blank" rel="noopener">📎 ${h(a.name)}</a>`).join('')}</div>`:''}</article>`).join(''):`<div class="muted">ยังไม่มีข้อความในช่อง Discord</div>`}</div><form id="discord-chat-form" class="chat-form"><input class="input" name="text" maxlength="1800" placeholder="ส่งข้อความไปยัง Discord..." required><button class="btn btn-primary" type="submit">ส่ง</button></form></section>`:`<section class="card empty"><h3>ยังไม่ได้เชื่อมต่อ Discord</h3><p>ผู้ดูแลระบบต้องตั้งค่า Discord Bot Token และ Channel ID บนเซิร์ฟเวอร์ก่อน</p></section>`}<div class="section-title" style="margin-top:28px"><h3>ประกาศล่าสุด</h3>${state.user.role==='admin'?`<button class="btn btn-primary" data-view="announcement">+ สร้างประกาศ</button>`:''}</div><div class="list">${anns.length?anns.map(a=>`<article class="card announcement-item"><span class="status approved">${a.audience==='all'?'ทุกคน':a.audience==='workers'?'คนงาน':'ผู้ดูแล'}</span><h4>${h(a.title)}</h4><p>${h(a.body)}</p><div class="announcement-author">โดย ${h(a.author?.fullName||'ระบบ')} · ${h(dt(a.createdAt))}</div></article>`).join(''):`<div class="card empty">ยังไม่มีประกาศ</div>`}</div>`,'community'); if(state.discordConfigured) $('#discord-chat-form').addEventListener('submit',async e=>{e.preventDefault();const f=new FormData(e.currentTarget);try{await api('/api/discord/messages',{method:'POST',body:JSON.stringify({text:f.get('text')})});await loadCore();renderCommunity();const box=$('.chat-messages');box.scrollTop=box.scrollHeight;}catch(err){toast(err.message,'error')}}); }
-
-function bankInfo(bank){ return bank?.accountNumber?`${bank.bankName||'ธนาคาร'} · ${bank.accountName||'-'} · ${bank.accountNumber}`:'ยังไม่ได้ระบุข้อมูลบัญชี'; }
-function renderPayroll(){ const approved=state.requests.filter(r=>r.status==='approved'), paid=state.requests.filter(r=>r.status==='paid'); app.innerHTML=shell(`${hero('Worker Payroll','โอนเงินและแนบหลักฐานการจ่าย')}<div class="section-title"><h3>รายการรอจ่าย</h3><span class="status pending">${approved.length} รายการ</span></div><div class="list">${approved.length?approved.map(r=>`<article class="card payment-item"><div class="payment-head"><div><h4>${h(r.user?.fullName||'-')}</h4><div class="meta">${h(r.category)} · ${h(r.ref)}</div><div class="bank-info">บัญชี: ${h(bankInfo({bankName:r.user?.bankName,accountName:r.user?.bankAccountName,accountNumber:r.user?.bankAccountNumber}))}</div></div><div class="amount">${h(money(r.amount))}</div></div><div class="request-actions"><span class="status pending">รอโอน</span><button class="btn btn-primary" data-pay="${r.id}">จ่ายเงิน</button></div></article>`).join(''):`<div class="card empty">ไม่มีรายการรอจ่าย</div>`}</div><div class="section-title" style="margin-top:30px"><h3>จ่ายแล้ว</h3></div><div class="list">${paid.length?paid.map(r=>`<article class="card payment-item"><div class="payment-head"><div><span class="status paid">จ่ายแล้ว</span><h4>${h(r.user?.fullName||'-')}</h4><div class="meta">${h(r.category)} · ${h(r.ref)}</div><div class="bank-info">บัญชีที่โอน: ${h(bankInfo(r.payment?.recipientBank))}</div><div class="meta">จ่ายเมื่อ ${h(dt(r.payment?.paidAt))}</div></div><div class="amount">${h(money(r.amount))}</div></div>${r.payment?.slipUrl?`<div style="margin-top:12px"><a class="text-link" href="${h(r.payment.slipUrl)}" target="_blank">ดูหลักฐานการโอน</a></div>`:''}</article>`).join(''):`<div class="card empty">ยังไม่มีประวัติการจ่าย</div>`}</div>`,'home'); }
-function openPay(id){ const r=state.requests.find(x=>x.id===id); if(!r)return; const bank={bankName:r.user?.bankName,accountName:r.user?.bankAccountName,accountNumber:r.user?.bankAccountNumber}; const m=modal(`<h3>บันทึกการเบิก</h3><div class="setting-row"><span>ผู้รับเงิน</span><strong>${h(r.user?.fullName||'-')}</strong></div><div class="setting-row"><span>บัญชีธนาคาร</span><strong>${h(bankInfo(bank))}</strong></div><div class="setting-row"><span>ยอดเงิน</span><strong>${h(money(r.amount))}</strong></div><form id="pay-form"><div class="field"><label>แนบสลิป *</label><div class="file-box"><input id="slip-file" type="file" accept="image/png,image/jpeg,image/webp" required><img id="slip-preview" class="file-preview hidden" alt="ตัวอย่างสลิป"></div><div class="hint">PNG/JPG/WebP ไม่เกิน 5 MB</div></div><div class="field"><label>หมายเหตุ (ถ้ามี)</label><textarea class="textarea" name="note" placeholder="ระบุข้อมูลเพิ่มเติมเกี่ยวกับการโอนเงิน..."></textarea></div><button class="btn btn-primary btn-block" type="submit">ยืนยันการจ่ายเงิน</button></form>`);
-  let dataUrl=''; $('#slip-file',m).addEventListener('change',e=>{const file=e.target.files[0];if(!file)return;if(file.size>5*1024*1024){toast('รูปใหญ่เกิน 5 MB','error');e.target.value='';return;}const reader=new FileReader();reader.onload=()=>{dataUrl=reader.result;const im=$('#slip-preview',m);im.src=dataUrl;im.classList.remove('hidden')};reader.readAsDataURL(file)});
-  $('#pay-form',m).addEventListener('submit',async e=>{e.preventDefault();if(!dataUrl)return toast('กรุณาเลือกสลิป','error');const f=new FormData(e.currentTarget);try{await api(`/api/payments/${id}/slip`,{method:'POST',body:JSON.stringify({dataUrl,note:f.get('note')})});m.remove();await loadCore();renderPayroll();toast('บันทึกการจ่ายเงินสำเร็จ')}catch(err){toast(err.message,'error')}});
-}
-
-function renderSettings(){ const s=state.settings||{}; const admin=state.user.role==='admin'; const push=localStorage.getItem('rubbersync_push')!=='off'; app.innerHTML=shell(`${hero('โปรไฟล์และตั้งค่า','จัดการข้อมูลติดต่อและบัญชีรับเงิน')}<div class="settings-grid"><section class="card settings-card"><h3>ข้อมูลติดต่อและบัญชีรับเงิน</h3><form id="profile-form"><div class="setting-row"><span>ชื่อ</span><strong>${h(state.user.fullName)}</strong></div><div class="setting-row"><span>เบอร์โทรศัพท์</span><a class="text-link" href="tel:${h(state.user.phone)}">${h(state.user.phone)}</a></div><div class="setting-row" style="display:block"><label>LINE ID</label><input class="input" name="lineId" value="${h(state.user.lineId||'')}" placeholder="ระบุ LINE ID เพื่อให้ทีมงานติดต่อได้"></div><div class="setting-row" style="display:block"><label>ข้อมูลติดต่อเพิ่มเติม</label><textarea class="textarea" name="contactNote" placeholder="เช่น เวลาที่สะดวกรับสาย">${h(state.user.contactNote||'')}</textarea></div><div class="setting-row" style="display:block"><label>ธนาคาร</label><input class="input" name="bankName" value="${h(state.user.bankName||'')}" placeholder="เช่น ธนาคารกสิกรไทย"></div><div class="setting-row" style="display:block"><label>ชื่อบัญชี</label><input class="input" name="bankAccountName" value="${h(state.user.bankAccountName||'')}" placeholder="ชื่อ-นามสกุลเจ้าของบัญชี"></div><div class="setting-row" style="display:block"><label>เลขบัญชี</label><input class="input" name="bankAccountNumber" inputmode="numeric" value="${h(state.user.bankAccountNumber||'')}" placeholder="เลขบัญชีสำหรับรับเงิน"><button class="btn btn-primary btn-block" style="margin-top:12px" type="submit">บันทึกข้อมูล</button></div></form></section><section class="card settings-card"><h3>รายชื่อผู้ใช้งาน</h3><div class="setting-row"><span>ดูข้อมูลและติดต่อสมาชิกในสวน</span><button class="btn btn-outline" data-view="contacts">รายชื่อ</button></div><div class="setting-row"><span>บทบาทของฉัน</span><strong>${admin?'ผู้ดูแล':'คนงาน'}</strong></div></section><section class="card settings-card"><h3>การแจ้งเตือน</h3><div class="setting-row"><span>Push Notifications</span><button class="toggle ${push?'on':''}" data-action="toggle-push" aria-label="toggle"></button></div></section><section class="card settings-card"><h3>ความช่วยเหลือและข้อมูล</h3><div class="setting-row"><span>เวอร์ชัน</span><strong>${h(s.version||'1.0.0')}</strong></div><div class="setting-row"><button class="btn btn-danger btn-block" data-action="logout">ออกจากระบบ</button></div></section></div>`,'settings'); $('#profile-form').addEventListener('submit',async e=>{e.preventDefault();const f=new FormData(e.currentTarget);try{const d=await api('/api/me',{method:'PATCH',body:JSON.stringify({lineId:f.get('lineId'),contactNote:f.get('contactNote'),bankName:f.get('bankName'),bankAccountName:f.get('bankAccountName'),bankAccountNumber:f.get('bankAccountNumber')})});state.user=d.user;toast('บันทึกข้อมูลแล้ว');renderSettings();}catch(err){toast(err.message,'error')}}); }
-
-function renderContacts(){ const users=state.users; app.innerHTML=shell(`${hero('รายชื่อผู้ใช้งาน','ติดต่อทีมงานและสมาชิกในสวนได้โดยตรง')}<div class="list">${users.map(u=>`<article class="card contact-item"><div class="avatar">${h((u.fullName||'R').trim()[0]||'R')}</div><div class="contact-info"><h3>${h(u.fullName)} ${u.id===state.user.id?'<span class="muted">(ฉัน)</span>':''}</h3><div class="meta">${u.role==='admin'?'ผู้ดูแล':'คนงานสวนยาง'}</div><div class="contact-links"><a class="btn btn-outline" href="tel:${h(u.phone)}">โทร ${h(u.phone)}</a>${u.lineId?`<span class="line-id">LINE: ${h(u.lineId)}</span>`:''}</div>${u.contactNote?`<p class="muted">${h(u.contactNote)}</p>`:''}</div></article>`).join('')}</div>`,'settings'); }
-
-function renderReport(){ const m=state.metrics||{}; const rows=state.requests.map(r=>`<tr><td>${h(r.ref)}</td><td>${h(r.user?.fullName||'-')}</td><td>${h(r.category)}</td><td>${h(money(r.amount))}</td><td><span class="status ${r.status}">${statusText(r.status)}</span></td><td>${h(dateOnly(r.date))}</td></tr>`).join(''); app.innerHTML=shell(`${hero('รายงานภาพรวม','สรุปรายการเบิกจ่ายและสถานะ')}${metricCards()}<section class="card" style="padding:18px"><div class="table-wrap"><table class="table"><thead><tr><th>อ้างอิง</th><th>ผู้ขอ</th><th>หมวดหมู่</th><th>จำนวน</th><th>สถานะ</th><th>วันที่</th></tr></thead><tbody>${rows}</tbody></table></div></section>`,'home'); }
-
-function render(){ if(!state.user)return renderLogin(); const map={home:renderHome,request:renderRequest,history:renderHistory,'admin-requests':renderAdminRequests,'admin-history':renderAdminHistory,announcement:renderAnnouncement,community:renderCommunity,payroll:renderPayroll,settings:renderSettings,contacts:renderContacts,report:renderReport}; (map[state.view]||renderHome)(); }
-async function navigate(v, saveHistory = true){
-  if (saveHistory && state.view !== v) state.viewHistory.push(state.view);
-  state.view = v;
-  if (v === 'request') state.requestStep = 1;
-  if(['home','community','settings','contacts','history','admin-requests','admin-history','payroll','report'].includes(v)){
-    try { await loadCore(); } catch (err) { toast(err.message,'error'); }
+function renderHome() {
+  const cards = [
+    actionCard('💬', 'ระบบติดต่อสื่อสาร', 'สนทนาในระบบและเชื่อมโยง Discord', 'communication', '#5865f2'),
+    actionCard('📅', 'รอบขายยาง', 'วันเก็บ วันขาย ราคา และกำหนดการ', 'sales', '#3f6653')
+  ];
+  if (isWorker()) {
+    cards.push(actionCard('🧾', 'สร้างคำขอเบิก', 'บันทึกค่าใช้จ่ายและแนบหลักฐาน', 'request', '#7f5539'));
+    cards.push(actionCard('≡', 'ประวัติการเบิก', 'ติดตามสถานะและดูย้อนหลัง', 'history', '#9a6b42'));
   }
-  render();
-  window.scrollTo({ top: 0, behavior: 'smooth' });
-}
-function goBack(){
-  const previous = state.viewHistory.pop() || 'home';
-  state.view = previous;
-  render();
+  if (canViewAllExpenses()) cards.push(actionCard('✓', 'ตรวจสอบคำขอเบิก', canApprove() ? 'ตรวจหลักฐานและอนุมัติ/ไม่อนุมัติ' : 'ตรวจสอบรายการที่ได้รับอนุมัติและสถานะ', 'admin-requests', '#2e6b4b'));
+  if (canPay()) cards.push(actionCard('💸', 'บันทึกการจ่ายเงิน', 'แนบสลิปหลังรายการได้รับอนุมัติ', 'payroll', '#012d1d'));
+  if (canAnnounce()) cards.push(actionCard('📢', 'สร้างประกาศ', 'ส่งประกาศในระบบและเลือกส่ง Discord', 'announcement', '#936639'));
+  cards.push(actionCard('🔔', 'การแจ้งเตือน', 'กำหนดการและสถานะคำขอ', 'notifications', '#b07d00'));
+  app.innerHTML = shell(`${hero('ระบบบริหารจัดการสวนยาง', 'รวมการสื่อสาร รอบขายยาง และการเบิกค่าใช้จ่ายไว้ในระบบเดียว')}${metricCards()}<div class="action-grid">${cards.join('')}</div>`, 'home');
 }
 
-document.addEventListener('input',e=>{if(e.target.matches('input[name="phone"]'))e.target.value=e.target.value.replace(/[^0-9]/g,'').slice(0,10)});
-document.addEventListener('click',async e=>{
-  const passwordToggle=e.target.closest('[data-password-toggle]'); if(passwordToggle){const input=passwordToggle.parentElement.querySelector('input');const visible=input.type==='password';input.type=visible?'text':'password';passwordToggle.setAttribute('aria-label',visible?'ซ่อนรหัสผ่าน':'แสดงรหัสผ่าน');passwordToggle.title=visible?'ซ่อนรหัสผ่าน':'แสดงรหัสผ่าน';passwordToggle.classList.toggle('is-visible',visible);return}
-  const view=e.target.closest('[data-view]')?.dataset.view; if(view){e.preventDefault();if(view==='announcement')state.announcementDraft={title:'',body:''};document.querySelector('.modal-backdrop')?.remove();return navigate(view)}
-  const act=e.target.closest('[data-action]')?.dataset.action;
-  const testAccount=e.target.closest('[data-test-account]')?.dataset.testAccount;if(testAccount){const credentials=testAccount==='admin'?{phone:'0800000000',password:'12345678'}:{phone:'0800000001',password:'12345678'};const form=$('#login-form');form.elements.phone.value=credentials.phone;form.elements.password.value=credentials.password;return}
-  if(act==='register') return renderRegister();
-  if(act==='login') return renderLogin();
-  if(act==='forgot') return toast('สำหรับระบบจริงสามารถเชื่อม OTP/รีเซ็ตรหัสผ่านเพิ่มได้');
-  if(act==='logout') return logout();
-  if(act==='go-back') return goBack();
-  if(act==='refresh'){try{await loadCore();render();toast('อัปเดตข้อมูลแล้ว')}catch(err){toast(err.message,'error')}return}
-  if(act==='toggle-push'){const on=e.target.classList.toggle('on');localStorage.setItem('rubbersync_push',on?'on':'off');return}
-  if(act==='request-next'){state.requestStep=2;return renderRequest()}
-  if(act==='request-back'){state.requestStep=Math.max(1,state.requestStep-1);return renderRequest()}
-  if(act==='request-submit') return submitRequest();
-  const cat=e.target.closest('[data-category]')?.dataset.category; if(cat){state.requestDraft.category=cat;return renderRequest()}
-  const aud=e.target.closest('[data-audience]')?.dataset.audience; if(aud){state.audience=aud;return renderAnnouncement()}
-  const review=e.target.closest('[data-review]')?.dataset.review; if(review)return openReview(review);
-  const approve=e.target.closest('[data-approve]')?.dataset.approve; if(approve)return updateStatus(approve,'approved');
-  const reject=e.target.closest('[data-reject]')?.dataset.reject; if(reject){const m=modal(`<h3>ยืนยันไม่อนุมัติรายการ</h3><p>ต้องการปฏิเสธคำขอนี้หรือไม่?</p><div class="modal-actions"><button class="btn btn-outline" data-action="close-modal">ยกเลิก</button><button class="btn btn-danger" data-confirm-reject="${reject}">ปฏิเสธ</button></div>`);return}
-  const cr=e.target.closest('[data-confirm-reject]')?.dataset.confirmReject;if(cr)return updateStatus(cr,'rejected');
-  if(act==='close-modal') return e.target.closest('.modal-backdrop')?.remove();
-  const pay=e.target.closest('[data-pay]')?.dataset.pay;if(pay)return openPay(pay);
-  const receipt=e.target.closest('[data-view-receipt]')?.dataset.viewReceipt;if(receipt)return openReceipt(receipt);
+function renderRequest() {
+  if (!isWorker()) return renderForbidden('เฉพาะคนงานกรีดยางเท่านั้นที่สร้างคำขอเบิกได้');
+  app.innerHTML = shell(`${hero('สร้างคำขอเบิกค่าใช้จ่าย', 'บันทึกรายการ จำนวนเงิน วันที่ และแนบใบเสร็จหรือหลักฐาน')}
+    <section class="card form-card"><form id="request-form">
+      <div class="field"><label>ประเภทค่าใช้จ่าย *</label><select class="select" name="category" required>${['ค่าอุปกรณ์', 'ค่าน้ำมัน', 'ค่าน้ำกรด', 'อื่นๆ'].map(x => `<option>${x}</option>`).join('')}</select></div>
+      <div class="field"><label>จำนวนเงิน *</label><input class="input" name="amount" type="number" min="0.01" step="0.01" required></div>
+      <div class="field"><label>วันที่เกิดค่าใช้จ่าย *</label><input class="input" name="date" type="date" value="${todayLocal()}" required></div>
+      <div class="field"><label>รายละเอียด</label><textarea class="textarea" name="note" placeholder="เช่น น้ำมันสำหรับตัดหญ้าโซน A"></textarea></div>
+      <div class="field"><label>ใบเสร็จ / หลักฐาน (ถ้ามี)</label><div class="file-box"><input id="receipt-file" type="file" accept="image/png,image/jpeg,image/webp"><div id="receipt-name" class="hint">รองรับ PNG/JPG/WebP ไม่เกิน 5 MB</div><img id="receipt-preview" class="file-preview hidden" alt="ตัวอย่างหลักฐาน"></div></div>
+      <button class="btn btn-primary btn-block" type="submit">ส่งคำขอเบิก</button>
+    </form></section>`, 'home');
+  state.receiptDataUrl = ''; state.receiptName = '';
+  $('#receipt-file').addEventListener('change', e => {
+    const file = e.target.files[0]; if (!file) return;
+    if (file.size > 5 * 1024 * 1024) { e.target.value = ''; toast('รูปมีขนาดเกิน 5 MB', 'error'); return; }
+    const reader = new FileReader();
+    reader.onload = () => { state.receiptDataUrl = reader.result; state.receiptName = file.name; $('#receipt-name').textContent = file.name; const im = $('#receipt-preview'); im.src = reader.result; im.classList.remove('hidden'); };
+    reader.readAsDataURL(file);
+  });
+  $('#request-form').addEventListener('submit', submitRequest);
+}
+async function submitRequest(e) {
+  e.preventDefault(); const f = new FormData(e.currentTarget);
+  try {
+    const d = await api('/api/requests', { method: 'POST', body: JSON.stringify({ category: f.get('category'), amount: Number(f.get('amount')), date: f.get('date'), note: f.get('note'), receiptDataUrl: state.receiptDataUrl }) });
+    await loadCore();
+    modal(`<div style="text-align:center"><div class="success-mark">✓</div><h3>ส่งคำขอสำเร็จ</h3><p>รหัสอ้างอิง <strong>${h(d.request.ref)}</strong></p>${d.duplicateSuspected ? '<div class="warning-box">ระบบพบว่ารายการนี้อาจซ้ำกับรายการเดิม ผู้อนุมัติจะเห็นคำเตือนนี้</div>' : ''}<div class="modal-actions"><button class="btn btn-primary" data-view="history">ดูสถานะ</button><button class="btn btn-outline" data-view="home">หน้าหลัก</button></div></div>`);
+  } catch (err) { toast(err.message, 'error'); }
+}
+function requestCard(r, admin = false) {
+  return `<article class="card request-item">
+    <div class="request-head"><div><span class="status ${r.status}">${statusText(r.status)}</span>${r.duplicateSuspected ? '<span class="status warning">อาจซ้ำ</span>' : ''}<h4>${h(r.category)}</h4><div class="meta">${h(r.ref)} · ${h(dateOnly(r.date))}</div><div class="meta">${h(r.user?.fullName || '')}</div></div><div class="amount">${h(money(r.amount))}</div></div>
+    ${r.note ? `<p class="muted">${h(r.note)}</p>` : ''}
+    <div class="evidence-links">${r.receiptUrl ? `<a class="text-link" href="${h(r.receiptUrl)}" target="_blank" rel="noopener">ดูใบเสร็จ/หลักฐาน</a>` : '<span class="muted">ไม่มีไฟล์หลักฐาน</span>'}${r.payment?.slipUrl ? `<a class="text-link" href="${h(r.payment.slipUrl)}" target="_blank" rel="noopener">ดูสลิปการจ่ายเงิน</a>` : ''}</div>
+    ${admin && r.status === 'pending' && canApprove() ? `<div class="request-actions"><button class="btn btn-danger" data-reject="${r.id}">ไม่อนุมัติ</button><button class="btn btn-success" data-approve="${r.id}">อนุมัติ</button></div>` : ''}
+  </article>`;
+}
+function renderHistory() {
+  app.innerHTML = shell(`${hero('ประวัติการเบิกค่าใช้จ่าย', 'ตรวจสอบสถานะและหลักฐานย้อนหลัง')}<div class="section-title"><h3>รายการของฉัน</h3>${isWorker() ? '<button class="btn btn-primary" data-view="request">+ สร้างคำขอ</button>' : ''}</div><div class="list">${state.requests.length ? state.requests.map(r => requestCard(r)).join('') : '<div class="card empty">ยังไม่มีรายการ</div>'}</div>`, 'home');
+}
+function renderAdminRequests() {
+  if (!canViewAllExpenses()) return renderForbidden('ไม่มีสิทธิ์ดูรายการเบิกทั้งหมด');
+  const pending = state.requests.filter(r => r.status === 'pending');
+  const done = state.requests.filter(r => r.status !== 'pending');
+  app.innerHTML = shell(`${hero('ตรวจสอบรายการเบิกค่าใช้จ่าย', canApprove() ? 'เจ้าของสวนสามารถอนุมัติหรือไม่อนุมัติรายการได้' : 'คนดูแลสวนสามารถตรวจสอบรายการและดำเนินการจ่ายหลังอนุมัติ')}
+    <div class="section-title"><h3>รอตรวจสอบ</h3><span class="status pending">${pending.length} รายการ</span></div><div class="list">${pending.length ? pending.map(r => requestCard(r, true)).join('') : '<div class="card empty">ไม่มีคำขอรอตรวจสอบ</div>'}</div>
+    <div class="section-title section-gap"><h3>ประวัติรายการ</h3></div><div class="list">${done.length ? done.map(r => requestCard(r, true)).join('') : '<div class="card empty">ยังไม่มีประวัติ</div>'}</div>`, 'home');
+}
+async function updateStatus(id, status) {
+  try {
+    await api(`/api/requests/${id}/status`, { method: 'PATCH', body: JSON.stringify({ status }) });
+    document.querySelector('.modal-backdrop')?.remove(); await loadCore(); renderAdminRequests(); toast(status === 'approved' ? 'อนุมัติรายการแล้ว' : 'ไม่อนุมัติรายการแล้ว');
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+function renderPayroll() {
+  if (!canPay()) return renderForbidden('ไม่มีสิทธิ์บันทึกการจ่ายเงิน');
+  const approved = state.requests.filter(r => r.status === 'approved');
+  const paid = state.requests.filter(r => r.status === 'paid');
+  app.innerHTML = shell(`${hero('บันทึกการจ่ายเงิน', 'หลังรายการได้รับอนุมัติ ให้แนบสลิปหรือหลักฐานการโอน')}
+    <div class="section-title"><h3>รายการรอจ่าย</h3><span class="status pending">${approved.length} รายการ</span></div>
+    <div class="list">${approved.length ? approved.map(r => `<article class="card payment-item"><div class="payment-head"><div><h4>${h(r.user?.fullName || '-')}</h4><div class="meta">${h(r.category)} · ${h(r.ref)}</div><div class="payee-bank">${r.payoutAccount?.accountNumber ? `${h(r.payoutAccount.bankName)} · ${h(r.payoutAccount.accountName)}<br><strong>เลขบัญชี ${h(r.payoutAccount.accountNumber)}</strong>` : '<span class="missing-bank">ยังไม่ได้กรอกข้อมูลบัญชีผู้รับ</span>'}</div></div><div class="amount">${h(money(r.amount))}</div></div><div class="request-actions"><button class="btn btn-primary" data-pay="${r.id}">บันทึกการจ่ายเงิน</button></div></article>`).join('') : '<div class="card empty">ไม่มีรายการรอจ่าย</div>'}</div>
+    <div class="section-title section-gap"><h3>จ่ายแล้ว</h3></div><div class="list">${paid.length ? paid.map(r => requestCard(r, true)).join('') : '<div class="card empty">ยังไม่มีประวัติการจ่าย</div>'}</div>`, 'home');
+}
+function openPay(id) {
+  const r = state.requests.find(x => x.id === id); if (!r) return;
+  const account = r.payoutAccount;
+  const accountHtml = account?.accountNumber ? `<div class="setting-row"><span>ธนาคาร</span><strong>${h(account.bankName)}</strong></div><div class="setting-row"><span>ชื่อบัญชี</span><strong>${h(account.accountName)}</strong></div><div class="setting-row"><span>เลขบัญชี</span><strong>${h(account.accountNumber)}</strong></div>` : '<div class="warning-box">ผู้รับยังไม่ได้บันทึกเลขบัญชี กรุณาติดต่อผู้รับก่อนโอนเงิน</div>';
+  const m = modal(`<h3>บันทึกการจ่ายเงิน</h3><div class="setting-row"><span>ผู้รับเงิน</span><strong>${h(r.user?.fullName || '-')}</strong></div>${accountHtml}<div class="setting-row"><span>ยอดเงิน</span><strong>${h(money(r.amount))}</strong></div><form id="pay-form"><div class="field"><label>สลิปการโอน *</label><div class="file-box"><input id="slip-file" type="file" accept="image/png,image/jpeg,image/webp" required><div class="hint">แนบภาพเพื่อยืนยันการจ่ายเงิน รองรับ PNG/JPG/WebP ไม่เกิน 5 MB</div><img id="slip-preview" class="file-preview hidden" alt="ตัวอย่างสลิป"></div></div><div class="field"><label>หมายเหตุ</label><textarea class="textarea" name="note"></textarea></div><button class="btn btn-primary btn-block" type="submit">ยืนยันการจ่ายเงินพร้อมสลิป</button></form>`);
+  let dataUrl = '';
+  $('#slip-file', m).addEventListener('change', e => {
+    const file = e.target.files[0]; if (!file) return;
+    if (file.size > 5 * 1024 * 1024) { e.target.value = ''; toast('รูปมีขนาดเกิน 5 MB', 'error'); return; }
+    const reader = new FileReader(); reader.onload = () => { dataUrl = reader.result; const im = $('#slip-preview', m); im.src = dataUrl; im.classList.remove('hidden'); }; reader.readAsDataURL(file);
+  });
+  $('#pay-form', m).addEventListener('submit', async e => {
+    e.preventDefault(); if (!dataUrl) return toast('กรุณาเลือกสลิป', 'error');
+    const f = new FormData(e.currentTarget);
+    try { await api(`/api/payments/${id}/slip`, { method: 'POST', body: JSON.stringify({ dataUrl, note: f.get('note') }) }); m.remove(); await loadCore(); renderPayroll(); toast('บันทึกการจ่ายเงินสำเร็จ'); } catch (err) { toast(err.message, 'error'); }
+  });
+}
+
+function saleCard(r) {
+  return `<article class="card sale-card"><div class="sale-head"><div><span class="status approved">รอบขายยาง</span><h4>${h(r.title)}</h4></div>${r.price == null ? '' : `<div class="price-chip">${h(Number(r.price).toFixed(2))} บาท</div>`}</div><div class="sale-dates"><div><span>วันเก็บยาง</span><strong>${h(dateOnly(r.collectionDate))}</strong></div><div><span>วันขายยาง</span><strong>${h(dateOnly(r.saleDate))}</strong></div></div>${r.note ? `<p class="muted">${h(r.note)}</p>` : ''}${canManageSales() ? `<div class="request-actions"><button class="btn btn-outline" data-edit-sale="${r.id}">แก้ไขกำหนดการ</button></div>` : ''}</article>`;
+}
+function renderSales() {
+  app.innerHTML = shell(`${hero('รอบขายยางและกำหนดการ', 'แยกวันเก็บ วันขาย และราคายางออกจากข้อความสนทนา')}
+    ${canManageSales() ? '<div class="section-title"><h3>รายการรอบขาย</h3><button class="btn btn-primary" data-action="new-sale">+ เพิ่มรอบขาย</button></div>' : '<div class="section-title"><h3>รายการรอบขาย</h3></div>'}
+    <div class="list">${state.saleRounds.length ? state.saleRounds.map(saleCard).join('') : '<div class="card empty">ยังไม่มีข้อมูลรอบขายยาง</div>'}</div>`, 'home');
+}
+function openSaleForm(existing = null) {
+  const r = existing || { title: '', collectionDate: '', saleDate: '', price: '', note: '' };
+  const m = modal(`<h3>${existing ? 'แก้ไขรอบขายยาง' : 'เพิ่มรอบขายยาง'}</h3><form id="sale-form"><div class="field"><label>ชื่อรอบ *</label><input class="input" name="title" value="${h(r.title)}" required></div><div class="field"><label>วันเก็บยาง *</label><input class="input" name="collectionDate" type="date" value="${h(r.collectionDate)}" required></div><div class="field"><label>วันขายยาง *</label><input class="input" name="saleDate" type="date" value="${h(r.saleDate)}" required></div><div class="field"><label>ราคายาง/ราคาประมูล (บาท)</label><input class="input" name="price" type="number" min="0" step="0.01" value="${r.price == null ? '' : h(r.price)}"></div><div class="field"><label>หมายเหตุ</label><textarea class="textarea" name="note">${h(r.note || '')}</textarea></div><button class="btn btn-primary btn-block" type="submit">บันทึก</button></form>`);
+  $('#sale-form', m).addEventListener('submit', async e => {
+    e.preventDefault(); const f = new FormData(e.currentTarget); const payload = { title: f.get('title'), collectionDate: f.get('collectionDate'), saleDate: f.get('saleDate'), price: f.get('price'), note: f.get('note') };
+    try { await api(existing ? `/api/sale-rounds/${existing.id}` : '/api/sale-rounds', { method: existing ? 'PATCH' : 'POST', body: JSON.stringify(payload) }); m.remove(); await loadCore(); renderSales(); toast(existing ? 'แก้ไขกำหนดการแล้ว' : 'เพิ่มรอบขายยางแล้ว'); } catch (err) { toast(err.message, 'error'); }
+  });
+}
+
+async function loadMessages() {
+  const d = await api('/api/messages'); state.messages = d.messages; return d;
+}
+function renderCommunication() {
+  const s = state.settings || {};
+  app.innerHTML = shell(`${hero('ระบบติดต่อสื่อสาร', 'ข้อความในระบบเชื่อมโยงกับ Discord และระบุแหล่งที่มาของข้อความ')}
+    <section class="card comm-status"><div><strong>Discord ส่งออก:</strong> ${s.discordWebhookConfigured ? '<span class="status approved">พร้อม</span>' : '<span class="status rejected">ยังไม่ตั้งค่า</span>'}</div><div><strong>Discord รับเข้า:</strong> ${s.discordInboundConfigured ? '<span class="status approved">พร้อม</span>' : '<span class="status pending">ต้องตั้ง Bot Token + Channel ID</span>'}</div>${discordInviteHref(s.discordInviteUrl) ? `<a class="btn btn-discord" href="${h(discordInviteHref(s.discordInviteUrl))}" target="_blank" rel="noopener noreferrer">เปิด Discord</a>` : ''}</section>
+    <section class="card chat-card"><div id="message-list" class="message-list">${state.messages.length ? state.messages.map(messageBubble).join('') : '<div class="empty">ยังไม่มีข้อความ</div>'}</div><form id="message-form" class="message-form"><textarea class="textarea" name="content" maxlength="2000" placeholder="พิมพ์ข้อความถึงผู้เกี่ยวข้อง..." required></textarea><button class="btn btn-primary" type="submit">ส่งข้อความ</button></form></section>
+    <div class="section-title section-gap"><h3>ประกาศล่าสุด</h3>${canAnnounce() ? '<button class="btn btn-outline" data-view="announcement">+ ประกาศ</button>' : ''}</div><div class="list">${state.announcements.length ? state.announcements.map(announcementCard).join('') : '<div class="card empty">ยังไม่มีประกาศ</div>'}</div>`, 'communication');
+  const list = $('#message-list'); if (list) list.scrollTop = list.scrollHeight;
+  $('#message-form').addEventListener('submit', async e => {
+    e.preventDefault(); const f = new FormData(e.currentTarget); const content = String(f.get('content') || '').trim(); if (!content) return;
+    try { const d = await api('/api/messages', { method: 'POST', body: JSON.stringify({ content }) }); e.currentTarget.reset(); await loadMessages(); renderCommunication(); toast(d.discord?.ok ? 'ส่งในระบบและ Discord แล้ว' : 'ส่งในระบบแล้ว'); } catch (err) { toast(err.message, 'error'); }
+  });
+}
+function messageBubble(m) {
+  const mine = m.userId && m.userId === state.user?.id;
+  return `<div class="message ${mine ? 'mine' : ''}"><div class="message-meta"><strong>${h(m.authorName || 'ระบบ')}</strong><span class="source ${m.source}">${m.source === 'discord' ? 'Discord' : 'RubberSync'}</span><span>${h(dt(m.createdAt))}</span></div><div class="message-body">${h(m.content).replace(/\n/g, '<br>')}</div></div>`;
+}
+function announcementCard(a) {
+  const audience = ({ all: 'ทุกคน', workers: 'คนงาน', managers: 'ผู้ดูแล', owner: 'เจ้าของสวน' })[a.audience] || a.audience;
+  return `<article class="card announcement-item"><span class="status approved">${h(audience)}</span><h4>${h(a.title)}</h4><p>${h(a.body)}</p><div class="announcement-author">โดย ${h(a.author?.fullName || 'ระบบ')} · ${h(dt(a.createdAt))}</div></article>`;
+}
+function renderAnnouncement() {
+  if (!canAnnounce()) return renderForbidden('ไม่มีสิทธิ์สร้างประกาศ');
+  app.innerHTML = shell(`${hero('สร้างประกาศ', 'ประกาศจะแสดงในระบบ และสามารถเลือกส่งไป Discord ได้')}
+    <section class="card form-card"><form id="announce-form"><div class="field"><label>กลุ่มเป้าหมาย *</label><select class="select" name="audience"><option value="all">ทุกคน</option><option value="workers">คนงานและคนดูแลคนงาน</option><option value="managers">เจ้าของสวนและคนดูแลสวน</option><option value="owner">เจ้าของสวน</option></select></div><div class="field"><label>หัวข้อ *</label><input class="input" name="title" required></div><div class="field"><label>รายละเอียด *</label><textarea class="textarea" name="body" required></textarea></div><label class="remember"><input type="checkbox" name="sendDiscord"> ส่งประกาศไป Discord ด้วย</label><button class="btn btn-primary btn-block" type="submit">สร้างประกาศ</button></form></section>`, 'communication');
+  $('#announce-form').addEventListener('submit', async e => {
+    e.preventDefault(); const f = new FormData(e.currentTarget);
+    try { const d = await api('/api/announcements', { method: 'POST', body: JSON.stringify({ audience: f.get('audience'), title: f.get('title'), body: f.get('body'), sendDiscord: f.get('sendDiscord') === 'on' }) }); await loadCore(); state.view = 'communication'; renderCommunication(); toast(d.discord?.ok ? 'สร้างประกาศและส่ง Discord แล้ว' : 'สร้างประกาศสำเร็จ'); } catch (err) { toast(err.message, 'error'); }
+  });
+}
+
+function renderNotifications() {
+  const unread = state.notifications.filter(n => !n.read).length;
+  app.innerHTML = shell(`${hero('การแจ้งเตือน', 'กำหนดการรอบขายยาง การเปลี่ยนแปลง และสถานะคำขอเบิก')}
+    <div class="section-title"><h3>รายการแจ้งเตือน</h3>${unread ? '<button class="btn btn-outline" data-action="read-all">อ่านทั้งหมด</button>' : ''}</div>
+    <div class="list">${state.notifications.length ? state.notifications.map(n => `<article class="card notification-item ${n.read ? '' : 'unread'}"><div class="spread"><strong>${h(n.title)}</strong>${n.read ? '<span class="meta">อ่านแล้ว</span>' : '<span class="status pending">ใหม่</span>'}</div><p>${h(n.body)}</p><div class="meta">${h(dt(n.createdAt))}</div></article>`).join('') : '<div class="card empty">ยังไม่มีการแจ้งเตือน</div>'}</div>`, 'notifications');
+}
+
+function renderSettings() {
+  const s = state.settings || {};
+  const owner = state.user.role === 'owner';
+  app.innerHTML = shell(`${hero('ตั้งค่า', 'ข้อมูลบัญชีและสถานะการเชื่อมต่อ')}
+    <div class="settings-grid"><section class="card settings-card"><h3>บัญชี</h3><div class="setting-row"><span>ชื่อ</span><strong>${h(state.user.fullName)}</strong></div><div class="setting-row"><span>เบอร์โทร</span><strong>${h(state.user.phone)}</strong></div><div class="setting-row"><span>บทบาท</span><strong>${h(roleLabel(state.user.role))}</strong></div></section>
+    <section class="card settings-card"><h3>บัญชีรับเงิน</h3><form id="bank-account-form"><div class="setting-row field-stack"><label>ธนาคาร</label><input class="input" name="bankName" value="${h(state.user.bankName || '')}" placeholder="เช่น ธนาคาร..." required></div><div class="setting-row field-stack"><label>ชื่อบัญชี</label><input class="input" name="bankAccountName" value="${h(state.user.bankAccountName || '')}" required></div><div class="setting-row field-stack"><label>เลขบัญชี</label><input class="input" name="bankAccountNumber" value="${h(state.user.bankAccountNumber || '')}" inputmode="numeric" pattern="[0-9 -]{10,20}" required></div><div class="setting-row"><button class="btn btn-primary btn-block" type="submit">บันทึกบัญชีรับเงิน</button></div><div class="hint" style="padding:0 18px 14px">ข้อมูลบัญชีจะแสดงให้เจ้าของสวนและผู้ดูแลสวนในหน้าบันทึกการจ่ายเงิน</div></form></section>
+    <section class="card settings-card"><h3>Discord</h3><div class="setting-row"><span>ส่งข้อความจากระบบ</span><span class="status ${s.discordWebhookConfigured ? 'approved' : 'rejected'}">${s.discordWebhookConfigured ? 'พร้อม' : 'ยังไม่ตั้งค่า'}</span></div><div class="setting-row"><span>รับข้อความจาก Discord</span><span class="status ${s.discordInboundConfigured ? 'approved' : 'pending'}">${s.discordInboundConfigured ? 'พร้อม' : 'ยังไม่ครบ'}</span></div>${canAnnounce() ? '<div class="setting-row"><button class="btn btn-discord btn-block" data-action="discord-test">ทดสอบ Webhook</button></div>' : ''}</section>
+    ${owner ? `<section class="card settings-card"><h3>ตั้งค่าระบบ</h3><form id="settings-form"><div class="setting-row field-stack"><label>ลิงก์ Discord Community</label><input class="input" name="discordInviteUrl" value="${h(s.discordInviteUrl || '')}" placeholder="https://discord.gg/..." autocomplete="url"></div><div class="setting-row field-stack"><label>แจ้งเตือนก่อนกำหนด (วัน)</label><input class="input" name="scheduleReminderDays" type="number" min="0" max="7" value="${h(s.scheduleReminderDays ?? 1)}"></div><div class="setting-row"><button class="btn btn-primary btn-block" type="submit">บันทึกการตั้งค่า</button></div></form>${discordInviteHref(s.discordInviteUrl) ? `<div class="setting-row"><a class="btn btn-discord btn-block" href="${h(discordInviteHref(s.discordInviteUrl))}" target="_blank" rel="noopener noreferrer">เปิด Discord Community ↗</a></div>` : ''}</section>` : ''}
+    <section class="card settings-card"><h3>ระบบ</h3><div class="setting-row"><span>เวอร์ชัน</span><strong>${h(s.version || '2.0.0')}</strong></div><div class="setting-row"><button class="btn btn-danger btn-block" data-action="logout">ออกจากระบบ</button></div></section></div>`, 'settings');
+  if (owner) $('#settings-form').addEventListener('submit', async e => {
+    e.preventDefault(); const f = new FormData(e.currentTarget);
+    try { const d = await api('/api/settings', { method: 'PATCH', body: JSON.stringify({ discordInviteUrl: f.get('discordInviteUrl'), scheduleReminderDays: Number(f.get('scheduleReminderDays')) }) }); state.settings = d.settings; toast('บันทึกการตั้งค่าแล้ว'); renderSettings(); } catch (err) { toast(err.message, 'error'); }
+  });
+  $('#bank-account-form').addEventListener('submit', async e => {
+    e.preventDefault(); const f = new FormData(e.currentTarget);
+    try { const d = await api('/api/me/bank-account', { method: 'PATCH', body: JSON.stringify({ bankName: f.get('bankName'), bankAccountName: f.get('bankAccountName'), bankAccountNumber: f.get('bankAccountNumber') }) }); state.user = d.user; toast('บันทึกบัญชีรับเงินแล้ว'); renderSettings(); }
+    catch (err) { toast(err.message, 'error'); }
+  });
+}
+function renderForbidden(message) {
+  app.innerHTML = shell(`${hero('ไม่มีสิทธิ์ใช้งาน', message)}<div class="card empty"><button class="btn btn-primary" data-view="home">กลับหน้าหลัก</button></div>`, 'home');
+}
+
+function render() {
+  if (!state.user) return renderLogin();
+  const map = { home: renderHome, request: renderRequest, history: renderHistory, 'admin-requests': renderAdminRequests, payroll: renderPayroll, sales: renderSales, communication: renderCommunication, announcement: renderAnnouncement, notifications: renderNotifications, settings: renderSettings };
+  (map[state.view] || renderHome)();
+}
+async function navigate(v) {
+  state.view = v;
+  try {
+    if (v === 'communication') { await Promise.all([loadCore(), loadMessages()]); }
+    else await loadCore();
+  } catch (e) { toast(e.message, 'error'); }
+  render(); window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+document.addEventListener('click', async e => {
+  const view = e.target.closest('[data-view]')?.dataset.view;
+  if (view) { e.preventDefault(); document.querySelector('.modal-backdrop')?.remove(); return navigate(view); }
+  const act = e.target.closest('[data-action]')?.dataset.action;
+  if (act === 'register') return renderRegister();
+  if (act === 'login') return renderLogin();
+  if (act === 'forgot') return renderForgotPassword();
+  if (act === 'forgot-restart') return renderForgotPassword();
+  if (act === 'forgot-resend') {
+    const phone = activeForgotPhone;
+    if (!phone) return toast('ไม่พบเบอร์โทรศัพท์ กรุณาเริ่มใหม่', 'error');
+    try {
+      const result = await api('/api/auth/password-reset/request', { method: 'POST', body: JSON.stringify({ phone }) });
+      const line = $('#dev-otp'); if (line) line.innerHTML = result.developmentCode ? `รหัสทดสอบ (โหมดพัฒนา): <strong>${h(result.developmentCode)}</strong>` : '';
+      toast('ส่งรหัสยืนยันใหม่แล้ว');
+    } catch (err) { toast(err.message, 'error'); }
+    return;
+  }
+  if (act === 'toggle-password') {
+    const btn = e.target.closest('[data-target]'); const input = document.getElementById(btn?.dataset.target);
+    if (!input) return;
+    const show = input.type === 'password'; input.type = show ? 'text' : 'password';
+    btn.textContent = show ? 'ซ่อน' : 'แสดง'; btn.setAttribute('aria-label', show ? 'ซ่อนรหัสผ่าน' : 'แสดงรหัสผ่าน'); btn.setAttribute('aria-pressed', String(show));
+    return;
+  }
+  if (act === 'logout') return logout();
+  if (act === 'refresh') { try { if (state.view === 'communication') await loadMessages(); await loadCore(); render(); toast('อัปเดตข้อมูลแล้ว'); } catch (err) { toast(err.message, 'error'); } return; }
+  if (act === 'discord-test') { try { const d = await api('/api/discord/test', { method: 'POST', body: '{}' }); toast(d.ok ? 'Discord Webhook ใช้งานได้' : 'Discord Webhook ยังไม่พร้อม'); } catch (err) { toast(err.message, 'error'); } return; }
+  if (act === 'new-sale') return openSaleForm();
+  if (act === 'read-all') { try { await api('/api/notifications/read-all', { method: 'POST', body: '{}' }); await loadCore(); renderNotifications(); } catch (err) { toast(err.message, 'error'); } return; }
+
+  const approve = e.target.closest('[data-approve]')?.dataset.approve; if (approve) return updateStatus(approve, 'approved');
+  const reject = e.target.closest('[data-reject]')?.dataset.reject;
+  if (reject) {
+    modal(`<h3>ยืนยันไม่อนุมัติ</h3><p>ต้องการไม่อนุมัติรายการนี้หรือไม่?</p><div class="modal-actions"><button class="btn btn-outline" data-action="close-modal">ยกเลิก</button><button class="btn btn-danger" data-confirm-reject="${reject}">ยืนยัน</button></div>`); return;
+  }
+  const cr = e.target.closest('[data-confirm-reject]')?.dataset.confirmReject; if (cr) return updateStatus(cr, 'rejected');
+  if (act === 'close-modal') return e.target.closest('.modal-backdrop')?.remove();
+  const pay = e.target.closest('[data-pay]')?.dataset.pay; if (pay) return openPay(pay);
+  const editSale = e.target.closest('[data-edit-sale]')?.dataset.editSale; if (editSale) return openSaleForm(state.saleRounds.find(x => x.id === editSale));
 });
 
-
-(async function init(){
-  if('serviceWorker' in navigator){ navigator.serviceWorker.register('/sw.js').catch(()=>{}); }
-  if(!state.token)return renderLogin();
-  try{const me=await api('/api/me');state.user=me.user;await loadCore();render();}catch{renderLogin();}
+(async function init() {
+  if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => {});
+  if (!state.token) return renderLogin();
+  try {
+    const me = await api('/api/me'); state.user = me.user; await loadCore(); render();
+  } catch { renderLogin(); }
 })();
