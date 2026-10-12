@@ -57,6 +57,23 @@
       "updatedAt": "2026-10-02T17:22:20.732Z",
       "reviewedBy": "usr_demo_owner",
       "reviewedAt": "2026-10-02T17:22:20.731Z"
+    },
+    {
+      "id": "req_musbaco3_36c28892",
+      "ref": "TXN-091875-RUBB",
+      "userId": "usr_demo_worker",
+      "category": "ค่าน้ำมัน",
+      "amount": 2000,
+      "date": "2026-10-03",
+      "note": "น้ำมันตัดหญ้าของโซน A",
+      "receiptUrl": "/uploads/receipt-usr_demo_worker-1791027091875-368ead.jpg",
+      "duplicateSuspected": false,
+      "duplicateOf": "",
+      "status": "paid",
+      "createdAt": "2026-10-03T11:31:31.875Z",
+      "updatedAt": "2026-10-03T11:34:33.032Z",
+      "reviewedBy": "usr_demo_owner",
+      "reviewedAt": "2026-10-03T11:33:53.882Z"
     }
   ],
   "announcements": [
@@ -92,6 +109,26 @@
       "source": "system",
       "discordMessageId": "",
       "createdAt": "2026-10-02T17:17:20.638Z"
+    },
+    {
+      "id": "msg_musb723z_e67b7320",
+      "roomId": "main",
+      "userId": "usr_demo_worker",
+      "authorName": "สมจิตร เดือนอิน",
+      "content": "สวัสดีครับ",
+      "source": "system",
+      "discordMessageId": "",
+      "createdAt": "2026-10-03T11:28:58.225Z"
+    },
+    {
+      "id": "msg_musb76te_ff0f2541",
+      "roomId": "main",
+      "userId": "usr_demo_worker",
+      "authorName": "สมจิตร เดือนอิน",
+      "content": "สวัสดีครับ",
+      "source": "system",
+      "discordMessageId": "",
+      "createdAt": "2026-10-03T11:29:04.322Z"
     }
   ],
   "notifications": [
@@ -108,9 +145,62 @@
       "readBy": [
         "usr_demo_worker"
       ]
+    },
+    {
+      "id": "ntf_musbaco3_a6e1ecf2",
+      "userId": null,
+      "roles": [
+        "owner"
+      ],
+      "title": "มีคำขอเบิกใหม่",
+      "body": "สมจิตร เดือนอิน ขอเบิก ค่าน้ำมัน 2000.00 บาท",
+      "type": "expense",
+      "refId": "req_musbaco3_36c28892",
+      "key": "",
+      "createdAt": "2026-10-03T11:31:31.876Z",
+      "readBy": []
+    },
+    {
+      "id": "ntf_musbde8q_b7290782",
+      "userId": "usr_demo_worker",
+      "roles": [],
+      "title": "สถานะคำขอเบิกเปลี่ยนแปลง",
+      "body": "TXN-091875-RUBB: อนุมัติแล้ว",
+      "type": "expense",
+      "refId": "req_musbaco3_36c28892",
+      "key": "",
+      "createdAt": "2026-10-03T11:33:53.882Z",
+      "readBy": [
+        "usr_demo_worker"
+      ]
+    },
+    {
+      "id": "ntf_musbe8g8_a6b507a1",
+      "userId": "usr_demo_worker",
+      "roles": [],
+      "title": "จ่ายเงินคำขอเบิกแล้ว",
+      "body": "TXN-091875-RUBB: จ่ายเงินแล้ว",
+      "type": "expense",
+      "refId": "req_musbaco3_36c28892",
+      "key": "",
+      "createdAt": "2026-10-03T11:34:33.032Z",
+      "readBy": [
+        "usr_demo_worker"
+      ]
     }
   ],
-  "payments": [],
+  "payments": [
+    {
+      "id": "pay_musbe8g8_022574b7",
+      "requestId": "req_musbaco3_36c28892",
+      "adminId": "usr_demo_owner",
+      "createdAt": "2026-10-03T11:34:33.032Z",
+      "slipUrl": "/uploads/payment-req_musbaco3_36c28892-1791027273031-3605bc.png",
+      "note": "",
+      "status": "paid",
+      "paidAt": "2026-10-03T11:34:33.032Z"
+    }
+  ],
   "settings": {
     "discordInviteUrl": "[https://discord.gg/RpNKvx5gE](https://discord.gg/RpNKvx5gE",
     "appName": "RubberSync",
