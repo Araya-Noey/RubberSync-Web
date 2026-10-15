@@ -1,3 +1,5 @@
+require('dotenv').config();
+
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
@@ -10,6 +12,9 @@ const DATA_DIR = path.join(ROOT, 'data');
 const DB_FILE = path.join(DATA_DIR, 'db.json');
 const UPLOAD_DIR = path.join(PUBLIC, 'uploads');
 const PORT = Number(process.env.PORT || 8080);
+const SUPABASE_URL = (process.env.SUPABASE_URL || '').replace(/\/+$/, '');
+const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
+const USE_SUPABASE = Boolean(SUPABASE_URL && SUPABASE_SERVICE_ROLE_KEY);
 const AUTH_SECRET = process.env.AUTH_SECRET || 'rubbersync-dev-secret-change-me';
 const DISCORD_WEBHOOK_URL = process.env.DISCORD_WEBHOOK_URL || '';
 const DISCORD_BOT_TOKEN = process.env.DISCORD_BOT_TOKEN || '';
@@ -122,7 +127,7 @@ function normalizeDb(raw) {
   db.settings = { discordInviteUrl: '', appName: 'RubberSync', version: '2.0.0', scheduleReminderDays: 1, ...(db.settings || {}) };
   return db;
 }
-function loadDb() {
+function loadLocalDb() {
   if (!fs.existsSync(DB_FILE)) {
     const fresh = initialDb();
     fs.writeFileSync(DB_FILE, JSON.stringify(fresh, null, 2));
@@ -132,9 +137,78 @@ function loadDb() {
   fs.writeFileSync(DB_FILE, JSON.stringify(normalized, null, 2));
   return normalized;
 }
-let db = loadDb();
+let db;
+let saveQueue = Promise.resolve();
 const passwordResetOtps = new Map();
-function saveDb() { fs.writeFileSync(DB_FILE, JSON.stringify(db, null, 2)); }
+
+function supabaseRequestHeaders(prefer) {
+  return {
+    apikey: SUPABASE_SERVICE_ROLE_KEY,
+    Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+    'Content-Type': 'application/json',
+    ...(prefer ? { Prefer: prefer } : {})
+  };
+}
+
+function supabaseStateUrl() {
+  return new URL('/rest/v1/rubbersync_app_state', `${SUPABASE_URL}/`);
+}
+
+async function readSupabaseDb() {
+  const endpoint = supabaseStateUrl();
+  endpoint.searchParams.set('select', 'data');
+  endpoint.searchParams.set('id', 'eq.main');
+  const response = await fetch(endpoint, { headers: supabaseRequestHeaders() });
+  if (!response.ok) {
+    const details = await response.text();
+    console.error(`Supabase database read failed (${response.status}): ${details}`);
+    throw new Error(`supabase_read_failed_${response.status}`);
+  }
+  const rows = await response.json();
+  if (!Array.isArray(rows)) throw new Error('supabase_invalid_response');
+  return rows.length ? rows[0].data : null;
+}
+
+async function writeSupabaseDb(snapshot) {
+  const endpoint = supabaseStateUrl();
+  endpoint.searchParams.set('on_conflict', 'id');
+  const response = await fetch(endpoint, {
+    method: 'POST',
+    headers: supabaseRequestHeaders('resolution=merge-duplicates,return=minimal'),
+    body: JSON.stringify({ id: 'main', data: snapshot, updated_at: now() })
+  });
+  if (!response.ok) {
+    const details = await response.text();
+    console.error(`Supabase database write failed (${response.status}): ${details}`);
+    throw new Error(`supabase_write_failed_${response.status}`);
+  }
+}
+
+async function initializeDb() {
+  if (!SUPABASE_URL && !SUPABASE_SERVICE_ROLE_KEY) {
+    db = loadLocalDb();
+    return;
+  }
+  if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
+    throw new Error('SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY must both be configured');
+  }
+
+  let stored = await readSupabaseDb();
+  if (stored == null) stored = loadLocalDb();
+  db = normalizeDb(stored);
+  await saveDb();
+}
+
+function saveDb() {
+  if (!USE_SUPABASE) {
+    fs.writeFileSync(DB_FILE, JSON.stringify(db, null, 2));
+    return Promise.resolve();
+  }
+  const snapshot = JSON.parse(JSON.stringify(db));
+  const save = saveQueue.then(() => writeSupabaseDb(snapshot));
+  saveQueue = save.catch(() => {});
+  return save;
+}
 
 function json(res, code, obj) {
   res.writeHead(code, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
@@ -272,7 +346,7 @@ async function syncDiscordMessages() {
       });
       known.add(m.id); added++;
     }
-    if (added) saveDb();
+    if (added) await saveDb();
     return { configured: true, ok: true, added };
   } catch (e) { return { configured: true, ok: false, error: e.message, added: 0 }; }
 }
@@ -281,7 +355,7 @@ async function handleApi(req, res, url) {
   const method = req.method;
   const p = url.pathname;
 
-  if (p === '/api/health' && method === 'GET') return json(res, 200, { ok: true, app: 'RubberSync', time: now(), version: db.settings.version });
+  if (p === '/api/health' && method === 'GET') return json(res, 200, { ok: true, app: 'RubberSync', time: now(), version: db.settings.version, database: USE_SUPABASE ? 'supabase' : 'local' });
 
   if (p === '/api/auth/login' && method === 'POST') {
     const body = await getBody(req);
@@ -331,7 +405,7 @@ async function handleApi(req, res, url) {
     if (!user) { passwordResetOtps.delete(phone); return json(res, 400, { error: 'invalid_or_expired_otp' }); }
     const hash = hashPassword(password);
     user.passwordSalt = hash.salt; user.passwordHash = hash.hash;
-    saveDb(); passwordResetOtps.delete(phone);
+    await saveDb(); passwordResetOtps.delete(phone);
     return json(res, 200, { ok: true });
   }
 
@@ -344,7 +418,7 @@ async function handleApi(req, res, url) {
     if (db.users.some(u => u.phone === phone)) return json(res, 409, { error: 'phone_exists' });
     const ph = hashPassword(password);
     const user = { id: id('usr'), fullName, phone, role: 'worker', passwordSalt: ph.salt, passwordHash: ph.hash, createdAt: now() };
-    db.users.push(user); saveDb();
+    db.users.push(user); await saveDb();
     return json(res, 201, { token: signToken(user), user: safeUser(user) });
   }
 
@@ -361,13 +435,13 @@ async function handleApi(req, res, url) {
     const bankAccountNumber = String(body.bankAccountNumber || '').replace(/[\s-]/g, '');
     if (!/^\d{10,16}$/.test(bankAccountNumber) || bankName.length < 2 || bankAccountName.length < 2) return json(res, 400, { error: 'invalid_bank_account' });
     user.bankName = bankName; user.bankAccountName = bankAccountName; user.bankAccountNumber = bankAccountNumber;
-    saveDb();
+    await saveDb();
     return json(res, 200, { user: safeUser(user, true) });
   }
 
   if (p === '/api/dashboard' && method === 'GET') {
     const user = requireAuth(req, res); if (!user) return;
-    ensureScheduleNotifications(); saveDb();
+    ensureScheduleNotifications(); await saveDb();
     const list = canViewAllExpenses(user) ? db.requests : db.requests.filter(r => r.userId === user.id);
     const counts = { pending: 0, approved: 0, rejected: 0, paid: 0 };
     list.forEach(r => { counts[r.status] = (counts[r.status] || 0) + 1; });
@@ -415,7 +489,7 @@ async function handleApi(req, res, url) {
     };
     db.requests.push(r);
     notify({ roles: ['owner'], title: 'มีคำขอเบิกใหม่', body: `${user.fullName} ขอเบิก ${category} ${r.amount.toFixed(2)} บาท${r.duplicateSuspected ? ' (อาจซ้ำกับรายการเดิม)' : ''}`, type: 'expense', refId: r.id });
-    saveDb();
+    await saveDb();
     return json(res, 201, { request: requestView(r), duplicateSuspected: r.duplicateSuspected });
   }
 
@@ -429,7 +503,7 @@ async function handleApi(req, res, url) {
     r.status = body.status; r.reviewedBy = owner.id; r.reviewedAt = now(); r.updatedAt = now();
     if (body.reason) r.reviewReason = String(body.reason).slice(0, 500);
     notify({ userId: r.userId, title: 'สถานะคำขอเบิกเปลี่ยนแปลง', body: `${r.ref}: ${body.status === 'approved' ? 'อนุมัติแล้ว' : 'ไม่อนุมัติ'}`, type: 'expense', refId: r.id });
-    saveDb();
+    await saveDb();
     return json(res, 200, { request: requestView(r) });
   }
 
@@ -458,7 +532,7 @@ async function handleApi(req, res, url) {
     db.announcements.push(a);
     const roles = audience === 'all' ? ['all'] : audience === 'workers' ? ['worker', 'worker_supervisor'] : audience === 'managers' ? ['owner', 'garden_manager'] : ['owner'];
     notify({ roles, title: `ประกาศ: ${title}`, body: text.slice(0, 180), type: 'announcement', refId: a.id });
-    saveDb();
+    await saveDb();
     let discord = { ok: false, configured: Boolean(DISCORD_WEBHOOK_URL) };
     if (body.sendDiscord) discord = await sendDiscordMessage(`📢 **${title}**\n${text}`);
     return json(res, 201, { announcement: a, discord });
@@ -466,7 +540,7 @@ async function handleApi(req, res, url) {
 
   if (p === '/api/sale-rounds' && method === 'GET') {
     const user = requireAuth(req, res); if (!user) return;
-    ensureScheduleNotifications(); saveDb();
+    ensureScheduleNotifications(); await saveDb();
     return json(res, 200, { saleRounds: db.saleRounds.slice().sort((a, b) => (b.saleDate || '').localeCompare(a.saleDate || '')) });
   }
 
@@ -483,7 +557,7 @@ async function handleApi(req, res, url) {
     const r = { id: id('sale'), title, collectionDate, saleDate, price: price == null ? null : Math.round(price * 100) / 100, note, createdBy: user.id, createdAt: now(), updatedAt: now() };
     db.saleRounds.push(r);
     notify({ roles: ['all'], title: 'เพิ่มรอบขายยาง', body: `${title}: เก็บ ${collectionDate} / ขาย ${saleDate}`, type: 'schedule', refId: r.id });
-    saveDb();
+    await saveDb();
     return json(res, 201, { saleRound: r });
   }
 
@@ -505,7 +579,7 @@ async function handleApi(req, res, url) {
     if (before.collectionDate !== r.collectionDate || before.saleDate !== r.saleDate) {
       notify({ roles: ['all'], title: 'กำหนดการรอบขายยางเปลี่ยนแปลง', body: `${r.title}: เก็บ ${r.collectionDate} / ขาย ${r.saleDate}`, type: 'schedule', refId: r.id });
     }
-    saveDb();
+    await saveDb();
     return json(res, 200, { saleRound: r });
   }
 
@@ -522,9 +596,9 @@ async function handleApi(req, res, url) {
     const content = String(body.content || '').trim();
     if (!content || content.length > 2000) return json(res, 400, { error: 'invalid_input' });
     const msg = { id: id('msg'), roomId: 'main', userId: user.id, authorName: user.fullName, content, source: 'system', discordMessageId: '', createdAt: now() };
-    db.messages.push(msg); saveDb();
+    db.messages.push(msg); await saveDb();
     const discord = await sendDiscordMessage(`**${user.fullName} (${ROLE_LABELS[user.role]})**\n${content}`);
-    if (discord.messageId) { msg.discordMessageId = discord.messageId; saveDb(); }
+    if (discord.messageId) { msg.discordMessageId = discord.messageId; await saveDb(); }
     return json(res, 201, { message: msg, discord });
   }
 
@@ -537,13 +611,13 @@ async function handleApi(req, res, url) {
     if (!discordMessageId || !content || content.length > 2000) return json(res, 400, { error: 'invalid_input' });
     if (db.messages.some(m => m.discordMessageId === discordMessageId)) return json(res, 200, { ok: true, duplicate: true });
     const msg = { id: id('msg'), roomId: 'main', userId: null, authorName, content, source: 'discord', discordMessageId, createdAt: body.createdAt || now() };
-    db.messages.push(msg); saveDb();
+    db.messages.push(msg); await saveDb();
     return json(res, 201, { message: msg });
   }
 
   if (p === '/api/notifications' && method === 'GET') {
     const user = requireAuth(req, res); if (!user) return;
-    ensureScheduleNotifications(); saveDb();
+    ensureScheduleNotifications(); await saveDb();
     const list = db.notifications.filter(n => notificationVisible(n, user)).slice().sort((a, b) => b.createdAt.localeCompare(a.createdAt));
     return json(res, 200, { notifications: list.map(n => ({ ...n, read: (n.readBy || []).includes(user.id) })) });
   }
@@ -551,7 +625,7 @@ async function handleApi(req, res, url) {
   if (p === '/api/notifications/read-all' && method === 'POST') {
     const user = requireAuth(req, res); if (!user) return;
     db.notifications.filter(n => notificationVisible(n, user)).forEach(n => { n.readBy = Array.isArray(n.readBy) ? n.readBy : []; if (!n.readBy.includes(user.id)) n.readBy.push(user.id); });
-    saveDb();
+    await saveDb();
     return json(res, 200, { ok: true });
   }
 
@@ -580,7 +654,7 @@ async function handleApi(req, res, url) {
     pay.slipUrl = slipUrl; pay.note = String(body.note || '').slice(0, 500); pay.status = 'paid'; pay.paidAt = now(); pay.adminId = user.id;
     r.status = 'paid'; r.updatedAt = now();
     notify({ userId: r.userId, title: 'จ่ายเงินคำขอเบิกแล้ว', body: `${r.ref}: จ่ายเงินแล้ว`, type: 'expense', refId: r.id });
-    saveDb();
+    await saveDb();
     return json(res, 200, { payment: pay, request: requestView(r) });
   }
 
@@ -603,7 +677,7 @@ async function handleApi(req, res, url) {
       } else db.settings.discordInviteUrl = '';
     }
     if (Number.isFinite(Number(body.scheduleReminderDays))) db.settings.scheduleReminderDays = Math.min(7, Math.max(0, Number(body.scheduleReminderDays)));
-    saveDb();
+    await saveDb();
     return json(res, 200, { settings: { ...db.settings, discordWebhookConfigured: Boolean(DISCORD_WEBHOOK_URL), discordInboundConfigured: Boolean(DISCORD_BOT_TOKEN && DISCORD_CHANNEL_ID) } });
   }
 
@@ -654,13 +728,19 @@ const server = http.createServer(async (req, res) => {
   }
 });
 
-server.listen(PORT, '0.0.0.0', () => {
-  const nets = os.networkInterfaces();
-  const ips = [];
-  for (const values of Object.values(nets)) for (const n of values || []) if (n.family === 'IPv4' && !n.internal) ips.push(n.address);
-  console.log('\n=============================================');
-  console.log(' RubberSync Web พร้อมใช้งาน');
-  console.log(` คอม:    http://localhost:${PORT}`);
-  ips.forEach(ip => console.log(` มือถือ: http://${ip}:${PORT}`));
-  console.log('=============================================\n');
+initializeDb().then(() => {
+  server.listen(PORT, '0.0.0.0', () => {
+    const nets = os.networkInterfaces();
+    const ips = [];
+    for (const values of Object.values(nets)) for (const n of values || []) if (n.family === 'IPv4' && !n.internal) ips.push(n.address);
+    console.log('\n=============================================');
+    console.log(' RubberSync Web พร้อมใช้งาน');
+    console.log(` คอม:    http://localhost:${PORT}`);
+    ips.forEach(ip => console.log(` มือถือ: http://${ip}:${PORT}`));
+    console.log(` ฐานข้อมูล: ${USE_SUPABASE ? 'Supabase' : 'เครื่องนี้ (JSON)'}`);
+    console.log('=============================================\n');
+  });
+}).catch(error => {
+  console.error('RubberSync database initialization failed:', error.message);
+  process.exitCode = 1;
 });
